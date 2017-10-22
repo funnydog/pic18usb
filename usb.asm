@@ -504,12 +504,11 @@ xx_feature_device:
         movf    bufdata+2, W, A
         addlw   -1
         bnz     xx_feature_err
-        ;; device remote wakeup
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
-        bsf     devstat, 1, B   ; set_feature
-        btfsc   STATUS, Z ,A
-        bcf     devstat, 1, B   ; clear_feature
+        bcf     devstat, 1, B   ; CLEAR_FEATURE = no remote_wakeup
+        btfss   STATUS, Z ,A
+        bsf     devstat, 1, B   ; SET_FEATURE = activate remote_wakeup
 xx_feature_send:
         banksel BD0IBC
         clrf    BD0IBC, B
@@ -523,7 +522,7 @@ xx_feature_endpoint:
         btfss   bufdata+4, 7, B
         bra     xx_feature_endpoint_out
 xx_feature_endpoint_in:
-        movf    bufdata+1, W, B
+        movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
         movlw   0x00            ; CLEAR_FEATURE = clear stall condition
         btfss   STATUS, Z, A
@@ -531,7 +530,7 @@ xx_feature_endpoint_in:
         movwf   INDF1, A
         bra     xx_feature_send
 xx_feature_endpoint_out:
-        movf    bufdata+1, W, B
+        movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
         movlw   0x88            ; CLEAR_FEATURE = clear the stall
         btfss   STATUS, Z, A
