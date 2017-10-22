@@ -463,6 +463,7 @@ get_status:
         bz      get_status_interface
         addlw   -1
         bz      get_status_endpoint
+get_status_error:
         bra     error_recovery
 get_status_device:
         movf    devstat, W, B
@@ -473,8 +474,7 @@ get_status_interface:
         bra     get_status_send
 get_status_endpoint:
         call    check_ep_direction
-        btfsc   STATUS, C, A
-        bra     error_recovery
+        bc      get_status_error
         call    load_ep_bdt
         movf    INDF1, W, A
         andlw   0x04
@@ -518,8 +518,7 @@ xx_feature_send:
         return
 xx_feature_endpoint:
         call    check_ep_direction
-        btfsc   STATUS, C, A
-        bra     error_recovery
+        bc      xx_feature_err
         call    load_ep_bdt
         btfss   bufdata+4, 7, B
         bra     xx_feature_endpoint_out
