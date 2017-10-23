@@ -697,10 +697,10 @@ send_check_length:
 
 send_descriptor_packet:
         banksel bleft
-        movf    bleft, W, B     ; if (bleft <= MAXPACKETSIZE0) {
-        addlw   255 - MAXPACKETSIZE0
+        movf    bleft, W, B
+        sublw   MAXPACKETSIZE0
         movlw   MAXPACKETSIZE0
-        bc      send_descriptor_packet_2
+        bnc     send_descriptor_packet_2
         movlw   0xFF            ;
         movwf   devreq, B       ; devreq = 0xFF
         movf    bleft, W, B     ; cnt = bleft
