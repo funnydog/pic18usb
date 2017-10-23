@@ -121,10 +121,8 @@ usb_service_actv_end:
 
         movlw   1<<EPHSHK|1<<EPOUTEN|1<<EPINEN
         movwf   UEP0, A         ; enable input, output, setup, handshake
-
         clrf    UIR, A          ; clear the interrupt flags
         clrf    UADDR, A        ; reset the device address to 0
-
         movlw   0x9F
         movwf   UEIE, A         ; enable all the interrupts
 
