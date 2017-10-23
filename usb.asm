@@ -482,7 +482,7 @@ set_feature:
         movf    bufdata+0, W, A
         andlw   0x1F
         bz      xx_feature_device
-        addlw   -1
+        addlw   -2
         bz      xx_feature_endpoint
 xx_feature_err:
         bra     error_recovery
