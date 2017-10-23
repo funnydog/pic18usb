@@ -2,7 +2,9 @@ LINKSCRIPT = /usr/share/gputils/lkr/18f25k50_g.lkr
 OBJECTS = delay.o main.o usart.o usb.o
 OUTPUT = usb.hex
 
-all: $(OUTPUT)
+CFLAGS = -std=c99 -Wall -Werror -I/usr/include/libusb-1.0
+
+all: $(OUTPUT) client
 
 $(OUTPUT): $(OBJECTS)
 	gplink -m -c -s $(LINKSCRIPT) -o $@ $^
@@ -18,7 +20,11 @@ usart.o: config.inc usart.inc
 .PHONY = clean erase flash
 
 clean:
-	rm -f *.o *.hex *.cod *.map *.lst *.cof *~
+	@rm client.o client
+	@rm -f *.o *.hex *.cod *.map *.lst *.cof *~
+
+client: client.o
+	$(CC) -o $@ $^ -lusb-1.0
 
 erase:
 	pk2cmd -R -P -E
