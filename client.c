@@ -16,7 +16,7 @@ static int get_status(libusb_device_handle *handle, uint8_t target, uint8_t idx)
 		2,		/* wLength */
 		100);		/* timeout */
 	if (r < 0) {
-		fprintf(stderr, "GET_STATUS %2x %2x error\n", target, idx);
+		fprintf(stderr, "GET_STATUS target: %2x idx: %2x error\n", target, idx);
 		return r;
 	}
 	return status;
