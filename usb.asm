@@ -686,12 +686,6 @@ send_check_length:
         bc      send_descriptor_packet
         movf    bufdata+6, W, B ;   bleft = wLength;
         movwf   bleft, B        ;
-        movlw   'C'
-        call    usart_send
-        lfsr    FSR0, bleft
-        call    print_h8
-        movlw   ' '
-        call    usart_send
 
 send_descriptor_packet:
         banksel bleft
