@@ -290,21 +290,8 @@ standard_requests:
         movlw   HIGH(standard_requests_table)
         movwf   PCLATH, A
         rlncf   devreq, W, B
-        addwf   PCL, F, A
-standard_requests_table:
-        bra     get_status            ; GET_STATUS        (0)
-        bra     clear_feature         ; CLEAR_FEATURE     (1)
-        bra     standard_requests_err ; RESERVED          (2)
-        bra     set_feature           ; SET_FEATURE       (3)
-        bra     standard_requests_err ; RESERVED          (4)
-        bra     set_address           ; SET_ADDRESS       (5)
-        bra     get_descriptor        ; GET_DESCRIPTOR    (6)
-        bra     standard_requests_err ; SET_DESCRIPTOR    (7)
-        bra     get_configuration     ; GET_CONFIGURATION (8)
-        bra     set_configuration     ; SET_CONFIGURATION (9)
-        bra     get_interface         ; GET_INTERFACE    (10)
-        bra     set_interface         ; SET_INTERFACE    (11)
-        bra     standard_requests_err ; SYNCH_FRAME      (12)
+        addlw   LOW(standard_requests_table)
+        movwf   PCL, A
 standard_requests_err:
         movlw   'E'
         call    usart_send
@@ -749,6 +736,22 @@ Descriptor:
         tblrd   *
         movf    TABLAT, W
         return
+
+.usbjumptables  code    0x300
+standard_requests_table:
+        bra     get_status            ; GET_STATUS        (0)
+        bra     clear_feature         ; CLEAR_FEATURE     (1)
+        bra     standard_requests_err ; RESERVED          (2)
+        bra     set_feature           ; SET_FEATURE       (3)
+        bra     standard_requests_err ; RESERVED          (4)
+        bra     set_address           ; SET_ADDRESS       (5)
+        bra     get_descriptor        ; GET_DESCRIPTOR    (6)
+        bra     standard_requests_err ; SET_DESCRIPTOR    (7)
+        bra     get_configuration     ; GET_CONFIGURATION (8)
+        bra     set_configuration     ; SET_CONFIGURATION (9)
+        bra     get_interface         ; GET_INTERFACE    (10)
+        bra     set_interface         ; SET_INTERFACE    (11)
+        bra     standard_requests_err ; SYNCH_FRAME      (12)
 
 .usbtables      CODE_PACK
 DescriptorBegin:
