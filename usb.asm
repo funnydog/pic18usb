@@ -98,8 +98,8 @@ usb_service_actv_end:
         bcf     UIR, TRNIF, A
 
         ;; disable all the endpoints
-        clrf    UEP0, A
-        call    clear_endpoints
+        clrf    UEP0, A         ; clear the EP0
+        call    clear_endpoints ; clear the other EPs
 
         ;; setup the EP0 Buffer Descriptor Table (OUT && IN)
         banksel BD0OBC
@@ -133,7 +133,7 @@ usb_service_actv_end:
         movwf   uswstat, B      ; set the DEFAULT state
         clrf    devconf, B      ; device configuration cleared
         movlw   1
-        movwf   devstat, B      ; self-powered and remote-wakeup disabled
+        movwf   devstat, B      ; Self-Powered !Remote-Wakeup
 usb_service_reset_end:
 
         ;; Transaction complete
@@ -173,6 +173,8 @@ usb_service_reset_end:
 usb_service_trn_end:
         return
 
+        ;; Clear the endpoint from 1 to 15
+        ;; but skip the EP0
 clear_endpoints:
         clrf    UEP1, A
         clrf    UEP2, A
@@ -192,10 +194,11 @@ clear_endpoints:
         return
 
         ;; called whenever we encounter an error
+        ;; with control packets to EP0
 error_recovery:
         banksel devreq
         movlw   0xFF
-        movwf   devreq, B
+        movwf   devreq, B       ; set devreq to 0xFF
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
         movwf   BD0OBC, B       ; set the bytecount to MAXPACKETSIZE0
