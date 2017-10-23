@@ -383,14 +383,12 @@ set_configuration:
         call    clear_endpoints
 
         ;; save the configuration number in devconf
-        movf    bufdata+3, W, B
-        movwf   devconf, B
-
-        ;; set the swstat accordingly
+        movf    bufdata+2, W, B ; wValue
+        movwf   devconf, B      ; devconf = wValue
         movlw   ADDRESS_STATE
         btfss   STATUS, Z, A
         movlw   CONFIG_STATE
-        movwf   uswstat, B
+        movwf   uswstat, B      ; uswstat = (devconf == 0) ? ADDRESS_STATE : CONFIG_STATE
 
         ;; send the reply packet
         banksel BD0IBC
