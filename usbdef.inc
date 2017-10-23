@@ -1,3 +1,10 @@
+        ;; BDnSTAT bit definitions
+UOWN    EQU     7
+DTS     EQU     6
+DTSEN   EQU     3
+BSTALL  EQU     2
+
+        ;; BD register addresses
 BD0OST	EQU	0x0400
 BD0OBC	EQU	0x0401
 BD0OAL	EQU	0x0402

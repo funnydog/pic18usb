@@ -33,25 +33,26 @@ bleft   res     1               ; descriptor length
 usb_init:
         ;; enable the Active Clock Tuning to USB clock
         movlw   1<<ACTSRC
-        movwf   ACTCON, A
+        movwf   ACTCON, A       ; set USB as source
         bsf     ACTCON, ACTEN, A
 
         ;; prepare the USB module
-        clrf    UCON, A         ; disable the module
+        clrf    UCON, A         ; disable the USB module
         clrf    UIE, A          ; mask the USB interrupts
         clrf    UIR, A          ; clear the USB interrupt flags
-        movlw   0x14            ; 1<<UPUEN | 1<<FSEN
+        movlw   1<<UPUEN|1<<FSEN
         movwf   UCFG, A         ; D+pullup | FullSpeed enable
-        movlw   0x08            ; 1<<USBEN
-        movwf   UCON, A         ; enable the module
+        movlw   1<<USBEN
+        movwf   UCON, A         ; enable the USB module
 
         banksel uswstat
-        clrf    uswstat, B
-        clrf    devreq, B
-        clrf    pending_addr, B
-        clrf    devconf, B
+        clrf    uswstat, B      ; device status (DEFAULT, ADDRESS, CONFIG)
+        movlw   0xFF
+        movwf   devreq, B       ; current request = 0xFF (no request)
+        clrf    pending_addr, B ; pending address
+        clrf    devconf, B      ; current configuration
         movlw   1
-        movwf   devstat, B
+        movwf   devstat, B      ; current status (1 = self powered)
 
         btfsc   UCON, SE0, A    ; wait until SE0 == 0
         bra     $-2
@@ -108,14 +109,14 @@ usb_service_actv_end:
         movwf   BD0OAL, B       ; OUT buffer address LSB
         movlw   HIGH(USBDATA)   ;
         movwf   BD0OAH, B       ; OUT buffer address MSB
-        movlw   0x88            ; 1<<UOWN | 1<<DTSEN
-        movwf   BD0OST, B       ; buffer owned by the SIE, data toggle enable
+        movlw   1<<UOWN|1<<DTSEN
+        movwf   BD0OST, B       ; UOWN, DTS enabled
 
         movlw   LOW(USBDATA + MAXPACKETSIZE0)
         movwf   BD0IAL, B       ; IN buffer address LSB
         movlw   HIGH(USBDATA + MAXPACKETSIZE0)
         movwf   BD0IAH, B       ; IN buffer address MSB
-        movlw   0x08            ; 1<<DTSEN
+        movlw   1<<DTSEN
         movwf   BD0IST, B       ; buffer owned by the firmware, data toggle enable
 
         movlw   1<<EPHSHK|1<<EPOUTEN|1<<EPINEN
@@ -197,10 +198,10 @@ error_recovery:
         movwf   devreq, B
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
-        movwf   BD0OBC, B
-        movlw   0x84
-        movwf   BD0IST, B
-        movwf   BD0OST, B
+        movwf   BD0OBC, B       ; set the bytecount to MAXPACKETSIZE0
+        movlw   1<<UOWN|1<<BSTALL
+        movwf   BD0IST, B       ; stall the EP0 IN
+        movwf   BD0OST, B       ; stall the EP0 OUT
         return
 
 usb_setup_token:
@@ -234,18 +235,19 @@ usb_setup_token:
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
         movwf   BD0OBC, B       ; reset the byte count
-        movwf   BD0IST, B       ; return the in buffer to us
+        movlw   1<<DTSEN
+        movwf   BD0IST, B       ; make the buffer available to the firmware
 
         ;; check the request type
         banksel bufdata
-        movlw   0x88
+        movlw   1<<UOWN|1<<DTSEN
         btfsc   bufdata+0, 7, B ; if bit7 of bmRequestType != 0
         bra     usb_setup_token_1
         movf    bufdata+6, W, B
         iorwf   bufdata+7, W, B
-        movlw   0x88
-        bz      usb_setup_token_1
-        movlw   0xC8
+        movlw   1<<UOWN|1<<DTSEN
+        btfss   STATUS, Z, A
+        iorlw   1<<DTS          ; if wLength == 0 set DATA1
 usb_setup_token_1:
         banksel BD0OST
         movwf   BD0OST, B
@@ -319,8 +321,8 @@ set_address:
         movwf   pending_addr, B ; store the address
         banksel BD0IBC
         clrf    BD0IBC, B       ; set the IN byte count to 0
-        movlw   0xC8            ; DATA1, UOWN
-        movwf   BD0IST, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 get_descriptor:
@@ -382,8 +384,8 @@ get_configuration:
         banksel BD0IBC
         movlw   0x01
         movwf   BD0IBC, B       ; byte count = 1
-        movlw   0xC8
-        movwf   BD0IST, B       ; DATA1, UOWN
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 set_configuration:
@@ -407,8 +409,8 @@ set_configuration:
         ;; send the reply packet
         banksel BD0IBC
         clrf    BD0IBC, B       ; byte count = 0
-        movlw   0xC8
-        movwf   BD0IST, B       ; DATA1, UOWN
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 get_interface:
@@ -428,8 +430,8 @@ get_interface:
         clrf    INDF0           ; always zero the bAlternateSetting
         movlw   1
         movwf   BD0IBC, B       ; byte count = 1
-        movlw   0xC8
-        movwf   BD0IST, B       ; DATA1, UOWN
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 set_interface:
@@ -443,8 +445,8 @@ set_interface:
         ;; send the reply packet
         banksel BD0IBC
         clrf    BD0IBC, B       ; byte count = 0
-        movlw   0xC8
-        movwf   BD0IST, B       ; DATA1, UOWN
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 get_status:
@@ -487,8 +489,8 @@ get_status_send:
         banksel BD0IBC
         movlw   0x02
         movwf   BD0IBC, B       ; byte count = 2
-        movlw   0xC8
-        movwf   BD0IST, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
 clear_feature:
@@ -512,8 +514,8 @@ xx_feature_device:
 xx_feature_send:
         banksel BD0IBC
         clrf    BD0IBC, B
-        movlw   0xC8
-        movwf   BD0IST, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 xx_feature_endpoint:
         call    check_ep_direction
@@ -599,16 +601,17 @@ usb_out_ep2:
 usb_out_ep0:
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
-        movwf   BD0OBC, B
-        movlw   0x88
-        movwf   BD0OST, B
-        clrf    BD0IBC, B
-        movlw   0xC8
-        movwf   BD0IST, B
+        movwf   BD0OBC, B       ; MAXPACKETSIZE0 bytes
+        movlw   1<<UOWN|1<<DTSEN
+        movwf   BD0OST, B       ; UOWN, DATA0
+        clrf    BD0IBC, B       ; 0 bytes
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
         return
 
         ;; check the direction of the endpoint request
         ;; (uses FSR1)
+        ;; set the Carry flag in case of mismatches
 check_ep_direction:
         lfsr    FSR1, UEP0
         movf    bufdata+4, W, B
@@ -728,11 +731,11 @@ send_loop:
 
         ;; send the data
         banksel BD0IST
-        movlw   0x40
-        xorwf   BD0IST, W, B
-        andlw   0x40
-        iorlw   0x88            ; DST + UOWN + DATA01
-        movwf   BD0IST, B
+        movlw   1<<DTS
+        xorwf   BD0IST, W, B    ; toggle DATA bit
+        andlw   1<<DTS          ; filter it
+        iorlw   1<<UOWN|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA[01] bit
         return
 
         ;; load the data in the offset into the table
