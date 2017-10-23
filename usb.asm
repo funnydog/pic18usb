@@ -125,7 +125,7 @@ usb_service_actv_end:
         clrf    UIR, A          ; clear the interrupt flags
         clrf    UADDR, A        ; reset the device address to 0
 
-        movlw   0xFF
+        movlw   0x9F
         movwf   UEIE, A         ; enable all the interrupts
 
         banksel uswstat
