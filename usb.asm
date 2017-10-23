@@ -208,29 +208,27 @@ usb_setup_token:
         call    print_nl
         movlw   'S'
         call    usart_send
+
+        ;; copy the received packet into bufdata
         banksel bufdata
-        movf    bufdesc+3, W, B ; MSB of the address
-        movwf   FSR0H, A
         movf    bufdesc+2, W, B ; LSB of the address
         movwf   FSR0L, A
+        movf    bufdesc+3, W, B ; MSB of the address
+        movwf   FSR0H, A        ; FSR0 points to the buffer for EP0
+        lfsr    FSR1, bufdata   ; FSR1 points to the private bufdata
 
-        ;; copy the setup packet (8 bytes) into bufdata
+        ;; movlw   MAXPACKETSIZE0
+        movf    bufdesc+1, W, B ; load the byte count
+        sublw   MAXPACKETSIZE0
+        movlw   MAXPACKETSIZE0
+        btfss   STATUS, C, A    ; avoid overflows
+        movf    bufdesc+1, W, B
+        movwf   cnt, B
+usb_setup_copy:
         movf    POSTINC0, W, A
-        movwf   bufdata+0, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+1, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+2, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+3, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+4, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+5, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+6, B
-        movf    POSTINC0, W, A
-        movwf   bufdata+7, B
+        movwf   POSTINC1, A
+        decfsz  cnt, F, B
+        bra     usb_setup_copy
 
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
