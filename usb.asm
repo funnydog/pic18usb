@@ -7,10 +7,9 @@
 MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 
 ;;; states
-POWERED_STATE   equ     0       ; poweron state
-DEFAULT_STATE   equ     1       ; state after a USB reset
-ADDRESS_STATE   equ     2       ; the device is addressed
-CONFIG_STATE    equ     3       ; the device is configured
+DEFAULT_STATE   equ     0       ; state after a USB reset
+ADDRESS_STATE   equ     1       ; the device is addressed
+CONFIG_STATE    equ     2       ; the device is configured
 
 .usbd1  udata
 
@@ -23,7 +22,7 @@ devconf res     1               ; current configuration
 devstat res     1               ; device status (self powered, remote wakeup)
 
 pending_addr    res     1       ; pending addr to assign to the device
-uswstat res     1               ; state of the device (POWERED, DEFAULT, ADDRESS, CONFIG)
+uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIG)
 
 dptr    res     1               ; descriptor offset
 bleft   res     1               ; descriptor length
@@ -298,6 +297,9 @@ standard_requests_err:
         bra     error_recovery  ; error condition
 
 set_address:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         btfsc   bufdata+2, 7, B ; check if the address is legal
         bra     standard_requests_err
 
@@ -312,6 +314,9 @@ set_address:
         return
 
 get_descriptor:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
         movf    bufdata+3, W, B ; wValue
@@ -359,14 +364,20 @@ get_descriptor_string2:
         bra     send_offset
 
 get_configuration:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         banksel BD0IAH
         movf    BD0IAH, W, B
         movwf   FSR0H, A
         movf    BD0IAL, W, B
         movwf   FSR0L, A
-        banksel devconf
-        movf    devconf, W, B
-        movwf   INDF0, A
+        banksel uswstat
+        movlw   ADDRESS_STATE
+        subwf   uswstat, W, B   ; if (uswstat == ADDRESS_STATE)
+        btfss   STATUS, Z, A    ;   INDF0 = 0;
+        movf    devconf, W, B   ; else
+        movwf   INDF0, A        ;   INDF0 = devconf;
         banksel BD0IBC
         movlw   0x01
         movwf   BD0IBC, B       ; byte count = 1
@@ -375,6 +386,9 @@ get_configuration:
         return
 
 set_configuration:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         movf    bufdata+3, W, B ; wValue
         addlw   255 - 1         ; error if config number > 1
         bc      standard_requests_err
@@ -398,6 +412,9 @@ set_configuration:
         return
 
 get_interface:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         bnz     standard_requests_err
@@ -419,6 +436,9 @@ get_interface:
         return
 
 set_interface:
+        call    check_request_acl ; ACL check
+        bc      standard_requests_err
+
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         bnz     standard_requests_err
@@ -434,6 +454,8 @@ set_interface:
         return
 
 get_status:
+        call    check_request_acl ; ACL check
+        bc      get_status_error
         ;; prepare the response
         banksel BD0IAH
         movf    BD0IAH, W, B
@@ -456,6 +478,12 @@ get_status_device:
         movwf   POSTINC0, A
         bra     get_status_send
 get_status_interface:
+        movlw   ADDRESS_STATE
+        subwf   uswstat, W, B
+        bz      get_status_error ; request not allowed in ADDRESS_STATE
+        movlw   1                ; max number of interfaces
+        subwf   bufdata+4, W, B  ; wIndex (interface number)
+        bc      get_status_error ; interface doesn't exist
         clrf    POSTINC0, A
         bra     get_status_send
 get_status_endpoint:
@@ -479,6 +507,9 @@ get_status_send:
 
 clear_feature:
 set_feature:
+        call    check_request_acl ; ACL check
+        bc      xx_feature_err
+
         movf    bufdata+0, W, A
         andlw   0x1F
         bz      xx_feature_device
@@ -591,6 +622,44 @@ usb_out_ep0:
         clrf    BD0IBC, B       ; 0 bytes
         movlw   1<<UOWN|1<<DTS|1<<DTSEN
         movwf   BD0IST, B       ; UOWN, DATA1
+        return
+
+        ;; check if the request is allowed for each state
+check_request_acl:
+        banksel bufdata
+        movf    bufdata+1, W, B
+        addlw   255 - 12
+        addlw   (12 - 0) + 1
+        bnc     check_request_err
+        movlw   UPPER(check_request_table)
+        movwf   PCLATU, A
+        movlw   HIGH(check_request_table)
+        movwf   PCLATH, A
+        rlncf   bufdata+1, W, B
+        addlw   LOW(check_request_table)
+        movwf   PCL, A
+check_request_err:
+        bsf     STATUS, C, A
+        return
+check_allow_default:
+        movlw   DEFAULT_STATE
+        bra     check_request_ok
+check_allow_onlyep0:
+        movf    bufdata+0, W, B ; bmRequestType
+        andlw   0x1F            ; W = recipient (device=0, interface=1, endpoint=2)
+        addlw   -2
+        bnz     check_allow_addressed
+        movf    bufdata+4, W, B ; if the request is for and endpoint
+        andlw   0x0F
+        bnz     check_request_err
+check_allow_addressed:
+        movlw   ADDRESS_STATE
+        bra     check_request_ok
+check_allow_configured:
+        movlw   CONFIG_STATE
+check_request_ok:
+        subwf   uswstat, W, B
+        btg     STATUS, C, A    ; C = (C==1)?0:1
         return
 
         ;; check the direction of the endpoint request
@@ -750,6 +819,21 @@ standard_requests_table:
         bra     get_interface         ; GET_INTERFACE    (10)
         bra     set_interface         ; SET_INTERFACE    (11)
         bra     standard_requests_err ; SYNCH_FRAME      (12)
+
+check_request_table:
+        bra     check_allow_onlyep0    ; GET_STATUS        (0)
+        bra     check_allow_onlyep0    ; CLEAR_FEATURE     (1)
+        bra     check_request_err      ; RESERVED          (2)
+        bra     check_allow_onlyep0    ; SET_FEATURE       (3)
+        bra     check_request_err      ; RESERVED          (4)
+        bra     check_allow_default    ; SET_ADDRESS       (5)
+        bra     check_allow_default    ; GET_DESCRIPTOR    (6)
+        bra     check_allow_addressed  ; SET_DESCRIPTOR    (7)
+        bra     check_allow_addressed  ; GET_CONFIGURATION (8)
+        bra     check_allow_addressed  ; SET_CONFIGURATION (9)
+        bra     check_allow_configured ; GET_INTERFACE    (10)
+        bra     check_allow_configured ; SET_INTERFACE    (11)
+        bra     check_allow_configured ; SYNCH_FRAME      (12)
 
 .usbtables      CODE_PACK
 DescriptorBegin:
