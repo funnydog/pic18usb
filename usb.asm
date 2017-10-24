@@ -649,9 +649,12 @@ check_allow_onlyep0:
         andlw   0x1F            ; W = recipient (device=0, interface=1, endpoint=2)
         addlw   -2
         bnz     check_allow_addressed
-        movf    bufdata+4, W, B ; if the request is for and endpoint
-        andlw   0x0F
+        movlw   ADDRESS_STATE
+        subwf   uswstat, W, B   ; set the C flag
+        movf    bufdata+4, W, B ; if the request is for ep (C flag unaffected)
+        andlw   0x0F            ; (C flag unaffected)
         bnz     check_request_err
+        bra     check_request_toggle
 check_allow_addressed:
         movlw   ADDRESS_STATE
         bra     check_request_ok
@@ -659,6 +662,7 @@ check_allow_configured:
         movlw   CONFIG_STATE
 check_request_ok:
         subwf   uswstat, W, B
+check_request_toggle:
         btg     STATUS, C, A    ; C = (C==1)?0:1
         return
 
