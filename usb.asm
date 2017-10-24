@@ -515,18 +515,18 @@ clear_feature:
 set_feature:
         call    check_request_acl ; ACL check
         bc      xx_feature_err
-
-        movf    bufdata+0, W, A
+        movf    bufdata+0, W, B ; bmRequestType
         andlw   0x1F
         bz      xx_feature_device
-        addlw   -2
+        addlw   -1
+        bz      xx_feature_send
+        addlw   -1
         bz      xx_feature_endpoint
 xx_feature_err:
         bra     error_recovery
 xx_feature_device:
-        movf    bufdata+2, W, A
-        addlw   -1
-        bnz     xx_feature_err
+        movf    bufdata+2, W, B ; ensure the feature is Remote Wakeup
+        bz      xx_feature_err
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
         bcf     devstat, 1, B   ; CLEAR_FEATURE = no remote_wakeup
@@ -539,6 +539,9 @@ xx_feature_send:
         movwf   BD0IST, B       ; UOWN, DATA1
         return
 xx_feature_endpoint:
+        movf    bufdata+4, W, B
+        andlw   0x1F
+        bz      xx_feature_send ; don't stall the EP0 endpoint
         call    check_ep_direction
         bc      xx_feature_err
         call    load_ep_bdt
