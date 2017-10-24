@@ -335,7 +335,7 @@ get_descriptor:
 
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
-        movf    bufdata+3, W, B ; wValue
+        movf    bufdata+3, W, B ; wValueHigh
         addlw   -1
         bz      get_descriptor_device
         addlw   -1
