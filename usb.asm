@@ -11,6 +11,11 @@ DEFAULT_STATE   equ     0       ; state after a USB reset
 ADDRESS_STATE   equ     1       ; the device is addressed
 CONFIG_STATE    equ     2       ; the device is configured
 
+;; constants
+MAX_CONFIG      equ     1       ; number of configurations
+MAX_INTERFACES  equ     1       ; number of interfaces
+MAX_ENDPOINT    equ     0       ; number of endpoints (except EP0)
+
 .usbd1  udata
 
 cnt     res     1               ; counter variable
@@ -390,9 +395,9 @@ set_configuration:
         call    check_request_acl ; ACL check
         bc      standard_requests_err
 
-        movf    bufdata+3, W, B ; wValue
-        addlw   255 - 1         ; error if config number > 1
-        bc      standard_requests_err
+        movf    bufdata+2, W, B
+        sublw   MAX_CONFIG
+        bnc     standard_requests_err
 
         ;; clear all the EP control registers except EP0
         call    clear_endpoints
