@@ -45,7 +45,8 @@ usb_init:
         movwf   UCON, A         ; enable the USB module
 
         banksel uswstat
-        clrf    uswstat, B      ; device status (DEFAULT, ADDRESS, CONFIG)
+        movlw   DEFAULT_STATE
+        movwf   uswstat, B      ; device status (DEFAULT, ADDRESS, CONFIG)
         movlw   0xFF
         movwf   devreq, B       ; current request = 0xFF (no request)
         clrf    penaddr, B      ; pending address
