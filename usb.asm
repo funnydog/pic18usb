@@ -315,12 +315,8 @@ standard_requests_err:
 set_address:
         call    check_request_acl ; ACL check
         bc      standard_requests_err
-
         btfsc   bufdata+2, 7, B ; check if the address is legal
         bra     standard_requests_err
-
-        movlw   5
-        movwf   devreq, B
         movf    bufdata+2, W, B ; wValue
         movwf   penaddr, B      ; store the address
         banksel BD0IBC
