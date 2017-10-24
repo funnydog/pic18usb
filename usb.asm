@@ -435,7 +435,7 @@ get_interface:
         sublw   CONFIG_STATE
         bnz     standard_requests_err
         movlw   MAX_INTERFACES
-        subwf   bufdata+3, W, B
+        subwf   bufdata+4, W, B ; wIndex
         bnc     standard_requests_err
 
         ;; send the reply packet
@@ -459,7 +459,7 @@ set_interface:
         sublw   CONFIG_STATE
         bnz     standard_requests_err
         movlw   MAX_INTERFACES
-        subwf   bufdata+3, W, B
+        subwf   bufdata+4, W, B ; wIndex
         bnc     standard_requests_err
 
         ;; send the reply packet
