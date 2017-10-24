@@ -3,6 +3,61 @@
 #include <stdlib.h>
 #include <libusb.h>
 
+#define DEFAULT_STATE     0
+#define ADDRESS_STATE     1
+#define CONFIG_STATE      2
+
+#define DEVICE            0x80
+#define INTERFACE         0x81
+#define ENDPOINT          0x82
+
+#define DIRIN             0x80
+#define DIROUT            0x00
+
+#define GET_STATUS        0x00
+#define CLEAR_FEATURE     0x01
+#define SET_FEATURE       0x03
+#define SET_ADDRESS       0x05
+#define GET_DESCRIPTOR    0x06
+#define SET_DESCRIPTOR    0x07
+#define GET_CONFIGURATION 0x08
+#define SET_CONFIGURATION 0x09
+#define GET_INTERFACE     0x0A
+#define SET_INTERFACE     0x0B
+#define SYNCH_FRAME       0x0C
+
+struct request
+{
+        uint8_t bmRequestType;
+        uint8_t bRequest;
+        uint16_t wValue;
+        uint16_t wIndex;
+        uint16_t wLength;
+
+        int shouldfail;
+} addressed[] = {
+        { DIROUT|DEVICE,    GET_STATUS,    0,    0, 2, 0 }, /* 0 */
+        { DIROUT|INTERFACE, GET_STATUS,    0,    0, 2, 0 }, /* 1 */
+        { DIROUT|ENDPOINT,  GET_STATUS,    0,    0, 2, 0 }, /* 2 */
+        { DIROUT|ENDPOINT,  GET_STATUS,    0, 0x80, 2, 0 }, /* 3 */
+        { DIROUT|ENDPOINT,  GET_STATUS,    0,    1, 2, 1 }, /* 4 */
+        { DIROUT|ENDPOINT,  GET_STATUS,    0, 0x81, 2, 1 }, /* 5 */
+
+        { DIROUT|DEVICE,    SET_FEATURE,   1,    0, 0, 0 }, /* 6 */
+        { DIROUT|INTERFACE, SET_FEATURE,   0,    0, 0, 0 }, /* 7 */
+        { DIROUT|ENDPOINT,  SET_FEATURE,   1,    0, 0, 0 }, /* 8 */
+        { DIROUT|ENDPOINT,  SET_FEATURE,   1, 0x80, 0, 0 }, /* 9 */
+        { DIROUT|ENDPOINT,  SET_FEATURE,   1,    1, 0, 1 }, /* 10 */
+        { DIROUT|ENDPOINT,  SET_FEATURE,   1, 0x81, 0, 1 }, /* 11 */
+
+        { DIROUT|DEVICE,    CLEAR_FEATURE, 1,    0, 0, 0 }, /* 12 */
+        { DIROUT|INTERFACE, CLEAR_FEATURE, 0,    0, 0, 0 }, /* 13 */
+        { DIROUT|ENDPOINT,  CLEAR_FEATURE, 1,    0, 0, 0 }, /* 14 */
+        { DIROUT|ENDPOINT,  CLEAR_FEATURE, 1, 0x80, 0, 0 }, /* 15 */
+        { DIROUT|ENDPOINT,  CLEAR_FEATURE, 1,    1, 0, 1 }, /* 16 */
+        { DIROUT|ENDPOINT,  CLEAR_FEATURE, 1, 0x81, 0, 1 }, /* 17 */
+};
+
 static int get_status(libusb_device_handle *handle, uint8_t target, uint8_t idx)
 {
         uint16_t status;
@@ -81,6 +136,27 @@ int main(int argc, char *argv[])
         status = get_status(handle, 2, 0x00);
         if (status >= 0) {
                 fprintf(stdout, "GET_STATUS (ep0 OUT   ): %04x\n", status);
+        }
+
+        /* configured state */
+        uint8_t buf[512];
+        for (int i = 0; i < sizeof(addressed)/sizeof(addressed[0]); i++) {
+                struct request *req = addressed + i;
+                r = libusb_control_transfer(
+                        handle,
+                        req->bmRequestType,
+                        req->bRequest,
+                        req->wValue,
+                        req->wIndex,
+                        buf,
+                        req->wLength,
+                        100);
+
+                if (req->shouldfail && r == 0) {
+                        fprintf(stderr, "Request %d didn't fail\n", i);
+                } else if (!req->shouldfail && r < 0) {
+                        fprintf(stderr, "Request %d failed %d\n", i, r);
+                }
         }
 
         libusb_close(handle);
