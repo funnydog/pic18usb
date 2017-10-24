@@ -1,7 +1,8 @@
+#include <libusb.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <libusb.h>
+#include <unistd.h>
 
 #define DEFAULT_STATE     0
 #define ADDRESS_STATE     1
@@ -77,6 +78,19 @@ static int get_status(libusb_device_handle *handle, uint8_t target, uint8_t idx)
         return status;
 }
 
+static int set_portb(libusb_device_handle *handle, uint8_t value)
+{
+        return libusb_control_transfer(
+                handle,
+                LIBUSB_RECIPIENT_DEVICE | LIBUSB_REQUEST_TYPE_VENDOR,
+                0,              /* bRequest (SET) */
+                value,		/* wValue (RB3) */
+                0,              /* wIndex   */
+                NULL,           /* data     */
+                0,              /* wLength  */
+                100);
+}
+
 int main(int argc, char *argv[])
 {
         libusb_context *ctx = NULL;
@@ -105,19 +119,6 @@ int main(int argc, char *argv[])
                 goto fail_close;
         }
 
-        int r = libusb_control_transfer(
-                handle,
-                LIBUSB_RECIPIENT_DEVICE | LIBUSB_REQUEST_TYPE_VENDOR,
-                1,              /* bRequest */
-                0,              /* wValue   */
-                0,              /* wIndex   */
-                NULL,           /* data     */
-                0,              /* wLength  */
-                100);
-        if (r < 0) {
-                fprintf(stderr, "cannot send the vendor specific request\n");
-        }
-
         int status = get_status(handle, 0, 0);
         if (status >= 0) {
                 fprintf(stdout, "GET_STATUS (device    ): %04x\n", status);
@@ -142,7 +143,7 @@ int main(int argc, char *argv[])
         uint8_t buf[512];
         for (int i = 0; i < sizeof(addressed)/sizeof(addressed[0]); i++) {
                 struct request *req = addressed + i;
-                r = libusb_control_transfer(
+                int r = libusb_control_transfer(
                         handle,
                         req->bmRequestType,
                         req->bRequest,
@@ -154,10 +155,17 @@ int main(int argc, char *argv[])
 
                 if (req->shouldfail && r == 0) {
                         fprintf(stderr, "Request %d didn't fail\n", i);
-                } else if (!req->shouldfail && r < 0) {
+                } else if (r < 0) {
                         fprintf(stderr, "Request %d failed %d\n", i, r);
                 }
         }
+
+	for (int i = 0; i < 1000; i++) {
+		if (set_portb(handle, (i&1) ? 3<<3 : 0) < 0) {
+			fprintf(stderr, "cannot send vendor request %i\n", i);
+		}
+		sleep(1);
+	}
 
         libusb_close(handle);
         libusb_exit(ctx);
