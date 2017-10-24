@@ -102,117 +102,11 @@ main:
         bsf     OSCCON, IRCF2, B ; increase the freq to 16MHz
         delaycy 65536           ; a small delay for things to settle
 
-        ;; TODO - set MSSP master mode
-        bcf     SSP1CON1, SSPEN, B ; disable the MSSP
-        movlw   0               ; 1<<SMP|1<<CKE
-        movwf   SSP1STAT, B     ; sample at the end, falling signal
-        movlw   0x02
-        movwf   SSP1CON1, B     ; enable SPI master mode
-        bcf     PIE1, SSPIE, B  ; disable the SPI interrupt
-        bcf     PIE2, BCLIE, B  ; disable the BUS collision interrupt
-        bsf     TRISB, 0, B     ; set RB0 as input
-        bsf     LATB, 2, B      ; set SS to inactive
-        bsf     SSP1CON1, SSPEN, B ; enable the MSSP
-        movlb   0x0             ; select the bank0
-
         call    usart_init
         call    usb_init
 
 main_loop:
         call    usb_service
-        ;; movlw   '\r'
-        ;; call    usart_send
-        ;; movlw   '\n'
-        ;; call    usart_send
-        bra     main_loop
-
-        ;; read the 32bit value from the MAX31855K
-        lfsr    FSR0, sample
-        movlw   4
-        movwf   tmp, B
-        bcf     LATB, 2, A      ; select the chip
-sample_loop:
-        bcf     PIR1, SSPIF, A
-        clrf    SSP1BUF, A      ; clear SSP1BUF to start receiving
-        btfss   PIR1, SSPIF, A
-        bra     $-2             ; wait until the data is received
-        movf    SSP1BUF, W, A
-        movwf   POSTINC0, A
-        decfsz  tmp, F, B
-        bra     sample_loop
-        bsf     LATB, 2, A      ; unselect the chip
-
-        ;; move the tc temperature (14bits) to tctemp[0:1]
-        ;; and shift right 2 bits while preserving
-        ;; the sign of the value
-
-        movf    sample+0, W, B
-        movwf   tctemp+1, B     ; move sample+0 to tctemp+1
-        movf    sample+1, W, B
-        movwf   tctemp+0, B     ; move sample+1 to tctemp+0
-
-        rlcf    tctemp+1, W, B  ; move the sign bit in the carry flag
-        rrcf    tctemp+1, F, B  ; shift right by 1 bit
-        rrcf    tctemp+0, F, B  ; shift right by 1 bit
-        rlcf    tctemp+1, W, B  ; move the sign bit in the carry flag
-        rrcf    tctemp+1, F, B  ; shift right by 1 bit
-        rrcf    tctemp+0, F, B  ; shift right by 1 bit
-
-        ;; move the internal temperature (12bits) to intemp[0:1]
-        ;; and sign extend the stored value to 16bits
-        swapf   sample+2, W, B
-        andlw   0x0F
-        movwf   intemp+1, B     ; the most significant nibble in intemp+1
-        movlw   0xF0
-        btfsc   intemp+1, 4, B  ; check the sign bit
-        iorwf   intemp+1, F, B  ; sign-extend the 12bit value
-
-        swapf   sample+2, W, B
-        andlw   0xF0
-        movwf   intemp+0, B     ; the middle nibble in intemp+0
-
-        swapf   sample+3, W, B
-        andlw   0x0F
-        iorwf   intemp+0, F, B  ; the least significant nibble in intemp+0
-
-        ;; set the thermocouple flags
-        clrf    tcflags, B      ; clear everything
-        btfsc   sample+1, 0, B  ; set the Fault bit (OC|SCV|SCV)
-        bsf     tcflags, FFAULT, B
-        btfsc   sample+3, 0, B  ; set the OC bit (tc open)
-        bsf     tcflags, FOC, B
-        btfsc   sample+3, 1, B  ; set the SCG bit (tc connected to GND)
-        bsf     tcflags, FSCG, B
-        btfsc   sample+3, 2, B  ; set the SCV bit (tc connected to Vcc)
-        bsf     tcflags, FSCV, B
-
-        lfsr    FSR0, tctemp
-        call    print_s16
-
-        movlw   ' '
-        call    usart_send
-        lfsr    FSR0, tcflags
-        call    print_h8
-
-        movlw   ' '
-        call    usart_send
-
-        lfsr    FSR0, sample
-        call    print_h32
-
-        movlw   '\r'
-        call    usart_send
-        movlw   '\n'
-        call    usart_send
-
-        ;; delay loop
-        movlw   200
-        movwf   tmp, B
-delay_loop:
-        delaycy 12500
-        decfsz  tmp, F, B
-        bra     delay_loop
-
         bra     main_loop
 
         ;; print a 32bit hex value
