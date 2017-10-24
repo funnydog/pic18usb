@@ -21,7 +21,7 @@ devreq  res     1               ; code of the received request
 devconf res     1               ; current configuration
 devstat res     1               ; device status (self powered, remote wakeup)
 
-pending_addr    res     1       ; pending addr to assign to the device
+penaddr res     1               ; pending addr to assign to the device
 uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIG)
 
 dptr    res     1               ; descriptor offset
@@ -48,7 +48,7 @@ usb_init:
         clrf    uswstat, B      ; device status (DEFAULT, ADDRESS, CONFIG)
         movlw   0xFF
         movwf   devreq, B       ; current request = 0xFF (no request)
-        clrf    pending_addr, B ; pending address
+        clrf    penaddr, B      ; pending address
         clrf    devconf, B      ; current configuration
         movlw   1
         movwf   devstat, B      ; current status (1 = self powered)
@@ -306,7 +306,7 @@ set_address:
         movlw   5
         movwf   devreq, B
         movf    bufdata+2, W, B ; wValue
-        movwf   pending_addr, B ; store the address
+        movwf   penaddr, B      ; store the address
         banksel BD0IBC
         clrf    BD0IBC, B       ; set the IN byte count to 0
         movlw   1<<UOWN|1<<DTS|1<<DTSEN
@@ -589,7 +589,7 @@ usb_in_ep0:
         bz      usb_in_ep0_getdescriptor
         return
 usb_in_ep0_setaddress:
-        movf    pending_addr, W, B
+        movf    penaddr, W, B
         movwf   UADDR, A        ; save the pending addr to the USB UADDR
         movlw   DEFAULT_STATE   ; UADDR == 0 -> the device is in default state
         btfss   STATUS, Z, A
