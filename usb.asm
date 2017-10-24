@@ -678,18 +678,21 @@ check_request_toggle:
 check_ep_direction:
         lfsr    FSR1, UEP0
         movf    bufdata+4, W, B
-        andlw   0x0F
+        andlw   0x7F
+        sublw   MAX_ENDPOINT    ; check if EP exists
+        bnc     check_ep_direction_err
+        sublw   MAX_ENDPOINT
         addwf   FSR1L, F, A
         btfsc   STATUS, C, A
         incf    FSR1H, F, A
         bcf     STATUS, C, A    ; no error by default
-        btfss   bufdata+4, 7, B
+        btfss   bufdata+4, 7, B ; bit7 set if direction == IN
         bra     check_ep_direction_out
         btfss   PLUSW1, EPINEN, A
-        bsf     STATUS, C, A
-        return
-check_ep_direction_out
+        bra     check_ep_direction_err
+check_ep_direction_out:
         btfss   PLUSW1, EPOUTEN, A
+check_ep_direction_err:
         bsf     STATUS, C, A
         return
 
