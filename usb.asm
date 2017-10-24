@@ -708,13 +708,13 @@ load_ep_bdt:
         movlw   HIGH(BD0OST)
         movwf   FSR1H, A
         movf    bufdata+4, W, B ; wIndex (endpoint)
-        andlw   0x8F
+        andlw   0x8F            ; filter out D7 and D3..D0
         movwf   FSR1L, A
-        rlncf   FSR1L, F, A
-        rlncf   FSR1L, F, A
-        rlncf   FSR1L, F, A     ; FSR1L has the offset into BD0OST
+        rlncf   FSR1L, F, A     ; 0 0 0 D3 D2 D1 D0 D7
+        rlncf   FSR1L, F, A     ; 0 0 D3 D2 D1 D0 D7 0
+        rlncf   FSR1L, F, A     ; 0 D2 D2 D1 D0 D7 0 0
         movlw   LOW(BD0OST)
-        addwf   FSR1L, F, A
+        addwf   FSR1L, F, A     ; add the low address of BDT
         btfsc   STATUS, C, A
         incf    FSR1H, F, A     ; FSR1 points to BDn[OI]ST
         return
