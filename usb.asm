@@ -4,6 +4,8 @@
 
         global  usb_init, usb_service
 
+;; #define USARTDEBUG              ; defined if usart debugging is enabled
+
 MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 
 ;;; states
@@ -211,9 +213,11 @@ error_stall:
         return
 
 usb_setup_token:
+#ifdef USARTDEBUG
         call    print_nl
         movlw   'S'
         call    usart_send
+#endif
 
         ;; copy the received packet into bufdata
         banksel bufdata
@@ -276,13 +280,16 @@ usb_setup_token_1:
 
         ;; process the standard requests
 standard_requests:
+#ifdef USARTDEBUG
         movlw   'S'
         call    usart_send
+#endif
         movf    bufdata+1, W, B
         movwf   devreq, B
         addlw   255 - 12
         addlw   (12 - 0) + 1
         bnc     standard_requests_err ; check if devreq is in range 0..12
+#ifdef USARTDEBUG
         ;; send the R number
         movlw   'R'
         call    usart_send
@@ -290,6 +297,7 @@ standard_requests:
         call    print_h8
         movlw   ' '
         call    usart_send
+#endif
         movlw   UPPER(standard_requests_table)
         movwf   PCLATU, A
         movlw   HIGH(standard_requests_table)
@@ -298,8 +306,10 @@ standard_requests:
         addlw   LOW(standard_requests_table)
         movwf   PCL, A
 standard_requests_err:
+#ifdef USARTDEBUG
         movlw   'E'
         call    usart_send
+#endif
         bra     error_stall  ; error condition
 
 set_address:
@@ -566,14 +576,18 @@ xx_feature_ep_out:
 
         ;; process the class requests
 class_requests:
+#ifdef USARTDEBUG
         movlw   'C'
         call    usart_send
+#endif
         bra     error_stall  ; error condition
 
         ;; process the vendor requests
 vendor_requests:
+#ifdef USARTDEBUG
         movlw   'V'
         call    usart_send
+#endif
         bra     error_stall  ; error condition
 
         ;; process the IN (send to the host) token
@@ -715,6 +729,7 @@ load_ep_bdt:
         incf    FSR1H, F, A     ; FSR1 points to BDn[OI]ST
         return
 
+#ifdef USARTDEBUG
         ;; print a 8bit hex value
 print_h8:
         swapf   INDF0, W, A     ; most significant nibble
@@ -735,11 +750,13 @@ print_nl:
         call    usart_send
         movlw   '\n'
         bra     usart_send
+#endif
 
 send_offset:
         movwf   dptr, B         ; offset of the data from the beginning
         call    Descriptor
         movwf   bleft, B        ; length of the bytes to send
+#ifdef USARTDEBUG
         call    print_nl
         movlw   'P'
         call    usart_send
@@ -747,6 +764,7 @@ send_offset:
         call    print_h8
         movlw   ' '
         call    usart_send
+#endif
 
 send_check_length:
         movf    bufdata+7, W, B
@@ -772,10 +790,12 @@ send_descriptor_packet_2:
 
         banksel BD0IBC
         movwf   BD0IBC, B       ; byte count to send
+#ifdef USARTDEBUG
         addlw   '0'
         call    usart_send
         movlw   ' '
         call    usart_send
+#endif
         movf    BD0IAH, W, B
         movwf   FSR0H, A
         movf    BD0IAL, W, B
