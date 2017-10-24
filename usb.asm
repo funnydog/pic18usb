@@ -14,7 +14,7 @@ CONFIG_STATE    equ     2       ; the device is configured
 ;; constants
 MAX_CONFIG      equ     1       ; number of configurations
 MAX_INTERFACES  equ     1       ; number of interfaces
-MAX_ENDPOINT    equ     0       ; number of endpoints (except EP0)
+MAX_ENDPOINT    equ     0       ; number of endpoints (beyond EP0)
 
 .usbd1  udata
 
@@ -198,16 +198,16 @@ clear_endpoints:
 
         ;; called whenever we encounter an error
         ;; with control packets to EP0
-error_recovery:
+error_stall:
         banksel devreq
         movlw   0xFF
         movwf   devreq, B       ; set devreq to 0xFF
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
-        movwf   BD0OBC, B       ; set the bytecount to MAXPACKETSIZE0
+        movwf   BD0OBC, B       ; prepare to receive the next packet
         movlw   1<<UOWN|1<<BSTALL
-        movwf   BD0IST, B       ; stall the EP0 IN
-        movwf   BD0OST, B       ; stall the EP0 OUT
+        movwf   BD0IST, B       ; issue a Stall on EP0 IN
+        movwf   BD0OST, B       ; and on EP0 OUT
         return
 
 usb_setup_token:
@@ -272,7 +272,7 @@ usb_setup_token_1:
         xorlw   2<<5 ^ 1<<5     ; 2 = vendor request
         btfsc   STATUS, Z, A
         bra     vendor_requests
-        bra     error_recovery  ; error condition
+        bra     error_stall  ; error condition
 
         ;; process the standard requests
 standard_requests:
@@ -300,7 +300,7 @@ standard_requests:
 standard_requests_err:
         movlw   'E'
         call    usart_send
-        bra     error_recovery  ; error condition
+        bra     error_stall  ; error condition
 
 set_address:
         call    check_request_acl ; ACL check
@@ -478,7 +478,7 @@ get_status:
         addlw   -1
         bz      get_status_endpoint
 get_status_error:
-        bra     error_recovery
+        bra     error_stall
 get_status_device:
         movf    devstat, W, B
         movwf   POSTINC0, A
@@ -517,14 +517,14 @@ set_feature:
         bc      xx_feature_err
         movf    bufdata+0, W, B ; bmRequestType
         andlw   0x1F
-        bz      xx_feature_device
+        bz      xx_feature_dev
         addlw   -1
         bz      xx_feature_send
         addlw   -1
-        bz      xx_feature_endpoint
+        bz      xx_feature_ep
 xx_feature_err:
-        bra     error_recovery
-xx_feature_device:
+        bra     error_stall
+xx_feature_dev:
         movf    bufdata+2, W, B ; ensure the feature is Remote Wakeup
         bz      xx_feature_err
         movf    bufdata+1, W, B ; wValue (request type)
@@ -538,16 +538,16 @@ xx_feature_send:
         movlw   1<<UOWN|1<<DTS|1<<DTSEN
         movwf   BD0IST, B       ; UOWN, DATA1
         return
-xx_feature_endpoint:
+xx_feature_ep:
         movf    bufdata+4, W, B
         andlw   0x1F
-        bz      xx_feature_send ; don't stall the EP0 endpoint
+        bz      xx_feature_send ; don't stall EP0
         call    check_ep_direction
         bc      xx_feature_err
         call    load_ep_bdt
         btfss   bufdata+4, 7, B
-        bra     xx_feature_endpoint_out
-xx_feature_endpoint_in:
+        bra     xx_feature_ep_out
+xx_feature_ep_in:
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
         movlw   0x00            ; CLEAR_FEATURE = clear stall condition
@@ -555,7 +555,7 @@ xx_feature_endpoint_in:
         movlw   0x84            ; SET_FEATURE = set stall condition
         movwf   INDF1, A
         bra     xx_feature_send
-xx_feature_endpoint_out:
+xx_feature_ep_out:
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
         movlw   0x88            ; CLEAR_FEATURE = clear the stall
@@ -568,13 +568,13 @@ xx_feature_endpoint_out:
 class_requests:
         movlw   'C'
         call    usart_send
-        bra     error_recovery  ; error condition
+        bra     error_stall  ; error condition
 
         ;; process the vendor requests
 vendor_requests:
         movlw   'V'
         call    usart_send
-        bra     error_recovery  ; error condition
+        bra     error_stall  ; error condition
 
         ;; process the IN (send to the host) token
 usb_in_token:
@@ -680,7 +680,7 @@ check_request_toggle:
         ;; set the Carry flag in case of mismatches
 check_ep_direction:
         lfsr    FSR1, UEP0
-        movf    bufdata+4, W, B
+        movf    bufdata+4, W, B ; D7 = direction, D3..D0 = endpoint
         andlw   0x7F
         sublw   MAX_ENDPOINT    ; check if EP exists
         bnc     check_ep_direction_err
@@ -701,14 +701,14 @@ check_ep_direction_err:
 
         ;; load BDT into FSR1
 load_ep_bdt:
+        movlw   HIGH(BD0OST)
+        movwf   FSR1H, A
         movf    bufdata+4, W, B ; wIndex (endpoint)
         andlw   0x8F
         movwf   FSR1L, A
         rlncf   FSR1L, F, A
         rlncf   FSR1L, F, A
         rlncf   FSR1L, F, A     ; FSR1L has the offset into BD0OST
-        movlw   HIGH(BD0OST)
-        movwf   FSR1H, A
         movlw   LOW(BD0OST)
         addwf   FSR1L, F, A
         btfsc   STATUS, C, A
