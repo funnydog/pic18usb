@@ -424,9 +424,9 @@ get_interface:
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         bnz     standard_requests_err
-        movf    bufdata+3, W, B
-        addlw   255 - 1
-        bc      standard_requests_err
+        movlw   MAX_INTERFACES
+        subwf   bufdata+3, W, B
+        bnc     standard_requests_err
 
         ;; send the reply packet
         banksel BD0IAH
@@ -448,9 +448,9 @@ set_interface:
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         bnz     standard_requests_err
-        movf    bufdata+3, W, B
-        addlw   255 - 1
-        bc      standard_requests_err
+        movlw   MAX_INTERFACES
+        subwf   bufdata+3, W, B
+        bnc     standard_requests_err
 
         ;; send the reply packet
         banksel BD0IBC
