@@ -574,7 +574,18 @@ vendor_requests:
         movlw   'V'
         call    usart_send
 #endif
-        bra     error_stall  ; error condition
+        movf    bufdata+1, W, B ; bRequest
+        bz      vendor_set
+        bra     error_stall
+vendor_set:
+        movf    bufdata+2, W, B ; wValue
+        movwf   LATB, A
+vendor_send:
+        banksel BD0IBC
+        clrf    BD0IBC, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
+        return
 
         ;; process the IN (send to the host) token
 usb_in_token:
