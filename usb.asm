@@ -542,37 +542,27 @@ xx_feature_dev:
         bcf     devstat, 1, B   ; CLEAR_FEATURE = no remote_wakeup
         btfss   STATUS, Z ,A
         bsf     devstat, 1, B   ; SET_FEATURE = activate remote_wakeup
+        bra     xx_feature_send
+xx_feature_ep:
+        movf    bufdata+4, W, B
+        andlw   0x7F
+        bz      xx_feature_send ; don't stall EP0
+        call    check_ep_direction
+        bc      xx_feature_err
+        call    load_ep_bdt     ; load BDT into FSR1
+        btfss   bufdata+4, 7, B
+        movf    bufdata+1, W, B ; wValue (request type)
+        sublw   1
+        movlw   0x88            ; CLEAR_FEATURE = clear stall condition
+        btfss   STATUS, Z, A
+        movlw   0x84            ; SET_FEATURE = set stall condition
+        movwf   INDF1, A
 xx_feature_send:
         banksel BD0IBC
         clrf    BD0IBC, B
         movlw   1<<UOWN|1<<DTS|1<<DTSEN
         movwf   BD0IST, B       ; UOWN, DATA1
         return
-xx_feature_ep:
-        movf    bufdata+4, W, B
-        andlw   0x1F
-        bz      xx_feature_send ; don't stall EP0
-        call    check_ep_direction
-        bc      xx_feature_err
-        call    load_ep_bdt
-        btfss   bufdata+4, 7, B
-        bra     xx_feature_ep_out
-xx_feature_ep_in:
-        movf    bufdata+1, W, B ; wValue (request type)
-        sublw   1
-        movlw   0x00            ; CLEAR_FEATURE = clear stall condition
-        btfss   STATUS, Z, A
-        movlw   0x84            ; SET_FEATURE = set stall condition
-        movwf   INDF1, A
-        bra     xx_feature_send
-xx_feature_ep_out:
-        movf    bufdata+1, W, B ; wValue (request type)
-        sublw   1
-        movlw   0x88            ; CLEAR_FEATURE = clear the stall
-        btfss   STATUS, Z, A
-        movlw   0x84            ; SET_FEATURE = set the stall
-        movwf   INDF1, A
-        bra     xx_feature_send
 
         ;; process the class requests
 class_requests:
