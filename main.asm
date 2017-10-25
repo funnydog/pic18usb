@@ -6,7 +6,7 @@
         ;; fuses configuration
         config  FOSC=INTOSCIO   ; internal oscillator block (16MHz)
         config  CFGPLLEN=ON     ; PLL enabled
-        config  PLLSEL=PLL3X    ; PLL multiplier = 4
+        config  PLLSEL=PLL3X    ; PLL multiplier = 3
         config  CPUDIV=CLKDIV3  ; PLL divider = 3
         config  LS48MHZ=SYS48x8 ; USB clock set to 6Mhz
         config  PCLKEN=OFF      ; Primary clock can be disabled in software
@@ -46,36 +46,23 @@
         config  EBTR3=OFF       ; Block 3 is not protected from table reads in other blocks
         config  EBTRB=OFF       ; Boot block is not protected from table reads in other blocks
 
-        ;; constants
-FFAULT  equ     3               ; FOC|FSCG|FSCV
-FOC     equ     2               ; thermocouple is open
-FSCG    equ     1               ; thermocouple is shorted to GND
-FSCV    equ     0               ; thermocouple is shorted to Vcc
-
+        ;; RAM section
 .data   udata
 
-        ;; variables
-tmp     res     2
-sample  res     4               ; 32bit sampled data
-tctemp  res     2               ; termocouple temperature
-intemp  res     2               ; internal temperature
-tcflags res     1               ; flags
+tmp     res     1               ; temporary variable
 digits  res     5               ; digits for bcd conversion
 
+        ;; eeprom section
 .edata  code    0xF00000
 
-        ;; variables stored in EEPROM
-
-        ;; entry code section
+        ;; vectors
 .reset  code    0x0000
-        goto    main
-
+        goto    main            ; reset vector (used goto for loader compatibility)
 .isr    code    0x0008
-        bra     isr
+        bra     isr             ; isr vector
 
-        ;; main code
 .main  code
-isr:
+isr:                            ; isr
         retfie  FAST
 
         ;; main code
@@ -242,14 +229,5 @@ b16_d5_lb4:                     ; do {
         skpc                    ; } while B3 < 0
         bra     b16_d5_lb4
         retlw   0
-
-        ;; LCD PCD8544
-        ;; P | DESCRIPTION
-        ;; --+------------
-        ;; 1 | RESET
-        ;; 2 | SCE\
-        ;; 3 | DC
-        ;; 4 | SDIN
-        ;; 5 | SCLK
 
         end
