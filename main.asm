@@ -79,9 +79,7 @@ main:
         clrf    LATC, B         ; clear the PORTC latches
         clrf    TRISC, B        ; set RC0..RC7 as outputs
 
-        ;; enable the interrupts
-        bcf     PIR2, CCP2IF, B
-        bcf     PIE2, CCP2IE, B
+        ;; disable the interrupts
         bcf     INTCON, GIE, B
         bcf     INTCON, PEIE, B
 
