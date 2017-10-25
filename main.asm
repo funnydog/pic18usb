@@ -86,8 +86,9 @@ main:
         bcf     INTCON, PEIE, B
 
         ;; speed up the internal clock to 16MHz
-        bsf     OSCCON, IRCF2, B ; increase the freq to 16MHz
-        delaycy 65536           ; a small delay for things to settle
+        bsf     OSCCON, IRCF2, B ; increase the freq to 16MHz (default: 1Mhz)
+        btfss   OSCCON, HFIOFS, B
+        bra     $-2             ; wait for the clock to stabilize
 
         call    usart_init
         call    usb_init
