@@ -3,6 +3,7 @@
         global  usart_init, usart_send, usart_recv, usart_send_str
         global  usart_send_h4, usart_send_h8, usart_send_h16, usart_send_h32
         global  usart_send_s16, usart_send_u16
+        global  usart_send_nl
 
 BAUD    EQU     9600
 
@@ -62,6 +63,13 @@ usart_send_str
         return
         call    usart_send
         bra     usart_send_str  ; next char
+
+        ;; send a serial newline (\r\n)
+usart_send_nl:
+        movlw   '\r'
+        rcall    usart_send
+        movlw   '\n'
+        bra     usart_send
 
         ;; print a 32bit hex value
 usart_send_h32:
