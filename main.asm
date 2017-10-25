@@ -84,7 +84,7 @@ main:
         bcf     INTCON, PEIE, B
 
         ;; speed up the internal clock to 16MHz
-        bsf     OSCCON, IRCF2, B ; increase the freq to 16MHz (default: 1Mhz)
+        bsf     OSCCON, IRCF2, B ; default: 1Mhz, IRCF1..0 = 3
         btfss   OSCCON, HFIOFS, B
         bra     $-2             ; wait for the clock to stabilize
 
