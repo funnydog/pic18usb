@@ -20,7 +20,7 @@ usart.o: config.inc usart.inc
 .PHONY = clean erase flash
 
 clean:
-	@rm client.o client
+	@rm -f client.o client
 	@rm -f *.o *.hex *.cod *.map *.lst *.cof *~
 
 client: client.o
