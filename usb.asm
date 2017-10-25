@@ -214,7 +214,7 @@ error_stall:
 
 usb_setup_token:
 #ifdef USARTDEBUG
-        call    print_nl
+        call    usart_send_nl
         movlw   'S'
         call    usart_send
 #endif
@@ -294,7 +294,7 @@ standard_requests:
         movlw   'R'
         call    usart_send
         lfsr    FSR0, devreq
-        call    print_h8
+        call    usart_send_h8
         movlw   ' '
         call    usart_send
 #endif
@@ -726,39 +726,16 @@ load_ep_bdt:
         incf    FSR1H, F, A     ; FSR1 points to BDn[OI]ST
         return
 
-#ifdef USARTDEBUG
-        ;; print a 8bit hex value
-print_h8:
-        swapf   INDF0, W, A     ; most significant nibble
-        call    print_h4
-        movf    INDF0, W, A     ; least significant nibble
-        ;; print a 4bit hex value
-print_h4:
-        andlw   0x0F            ; isolate the lower nibble
-        addlw   255 - 9         ; add 256 in two steps but only the
-        addlw   9 - 0 + 1       ; last addition affects the final C flag
-        btfss   STATUS, C, A
-        addlw   'A'-10-'0'      ; letter detected: add 'A'-10-'0'
-        addlw   '0'             ; add '0'
-        bra     usart_send      ; tail call usart_send
-
-print_nl:
-        movlw   '\r'
-        call    usart_send
-        movlw   '\n'
-        bra     usart_send
-#endif
-
 send_offset:
         movwf   dptr, B         ; offset of the data from the beginning
         call    Descriptor
         movwf   bleft, B        ; length of the bytes to send
 #ifdef USARTDEBUG
-        call    print_nl
+        call    usart_send_nl
         movlw   'P'
         call    usart_send
         lfsr    FSR0, bleft
-        call    print_h8
+        call    usart_send_h8
         movlw   ' '
         call    usart_send
 #endif
