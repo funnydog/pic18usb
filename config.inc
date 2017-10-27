@@ -3,4 +3,4 @@
         errorlevel -302
         radix   dec
 
-FOSC    equ     16000000        ; system clock in Hz
+FOSC    equ     48000000        ; system clock in Hz

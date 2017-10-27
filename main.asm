@@ -7,7 +7,7 @@
         config  FOSC=INTOSCIO   ; internal oscillator block (16MHz)
         config  CFGPLLEN=ON     ; PLL enabled
         config  PLLSEL=PLL3X    ; PLL multiplier = 3
-        config  CPUDIV=CLKDIV3  ; PLL divider = 3
+        config  CPUDIV=NOCLKDIV ; PLL divider = 1
         config  LS48MHZ=SYS48x8 ; USB clock set to 6Mhz
         config  PCLKEN=OFF      ; Primary clock can be disabled in software
         config  FCMEN=OFF       ; Fail-Safe Clock Monitor disabled
