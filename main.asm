@@ -60,6 +60,7 @@
 
 .main  code
 isr:                            ; isr
+        call    usart_isr
         retfie  FAST
 
         ;; main code
@@ -76,12 +77,12 @@ main:
         clrf    LATC, B         ; clear the PORTC latches
         clrf    TRISC, B        ; set RC0..RC7 as outputs
 
-        ;; disable the interrupts
-        bcf     INTCON, GIE, B
-        bcf     INTCON, PEIE, B
+        ;; enable the interrupts
+        bsf     INTCON, GIE, B
+        bsf     INTCON, PEIE, B
 
         ;; speed up the internal clock to 16MHz
-        bsf     OSCCON, IRCF2, B ; default: 1Mhz, IRCF1..0 = 3
+        bsf     OSCCON, IRCF2, B ; default: 1Mhz, IRCF1:0 = 3
         btfss   OSCCON, HFIOFS, B
         bra     $-2             ; wait for the clock to stabilize
 

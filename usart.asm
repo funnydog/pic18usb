@@ -1,58 +1,156 @@
         include "config.inc"
 
-        global  usart_init, usart_send, usart_recv, usart_send_str
+        global  usart_init, usart_send, usart_recv, usart_isr, usart_send_str
+        global  usart_send_nowait, usart_recv_nowait
         global  usart_send_h4, usart_send_h8, usart_send_h16, usart_send_h32
         global  usart_send_s16, usart_send_u16
         global  usart_send_nl
 
 BAUD    EQU     9600
+BUFSIZE EQU     16
+BUFMASK EQU     15
 
-.usartd udata_acs
+.usartd0 udata_acs
 tmp     res     1               ; temporary value
+xmtr    res     1               ; send queue read index
+xmtw    res     1               ; send queue write index
+rcvr    res     1               ; recv queue read index
+rcvw    res     1               ; recv queue write index
+fsrbk   res     2               ; fsr backup
+
+.usartd1 udata
+xmtbuf  res     BUFSIZE         ; write buffer
+rcvbuf  res     BUFSIZE         ; read buffer
 digits  res     5               ; digits for BCD conversion
 
 .usartc code
 
+usart_isr:
+        btfss   PIR1, RCIF, A
+        bra     usart_isr_rx_end
+        btfss   RCSTA, OERR, A  ; overrun
+        bra     usart_isr_oerr_end
+        bcf     RCSTA, CREN, A
+        bsf     RCSTA, CREN, A  ; recover from overrun
+        bra     usart_isr_rx_end
+usart_isr_oerr_end:
+        btfss   RCSTA, FERR, A  ; frame error
+        bra     usart_isr_ferr_end
+        movf    RCREG, W, A     ; recover from frame error
+        bra     usart_isr_rx_end
+usart_isr_ferr_end:
+        movf    rcvr, W, A
+        addlw   BUFSIZE
+        subwf   rcvw, W, A
+        bnz     usart_isr_full_end ; queue full, character lost
+        movf    RCREG, W, A
+        bra     usart_isr_rx_end
+usart_isr_full_end:
+        movff   FSR0L, fsrbk+0  ; backup FSR0
+        movff   FSR0H, fsrbk+1
+        lfsr    FSR0, rcvbuf
+        movf    rcvw, W, A
+        andlw   BUFMASK
+        movff   RCREG, PLUSW0   ; save the data
+        incf    rcvw, F, A      ; publish
+        movff   fsrbk+0, FSR0L  ; restore FSR0
+        movff   fsrbk+1, FSR0H
+usart_isr_rx_end:
+
+        btfss   PIR1, TXIF, A
+        bra     usart_isr_tx_end
+        movf    xmtr, W, A
+        subwf   xmtw, W, A
+        bz      usart_isr_tx_err ; queue empty
+        movff   FSR0L, fsrbk+0   ; backup FSR0
+        movff   FSR0H, fsrbk+1
+        lfsr    FSR0, xmtbuf
+        movf    xmtr, W, A
+        andlw   BUFMASK
+        movf    PLUSW0, W, A
+        movwf   TXREG, A        ; get the data
+        incf    xmtr, F, A      ; consume
+        movff   fsrbk+0, FSR0L  ; restore FSR0
+        movff   fsrbk+1, FSR0H
+        bra     usart_isr_tx_end
+usart_isr_tx_err:
+        bcf     PIE1, TXIE, A   ; disable TX interrupts
+usart_isr_tx_end:
+        return
+
         ;; initialize the usart module
-usart_init
+usart_init:
         bsf     RCSTA, SPEN, A  ; enable the usart module
         bsf     TRISC, 7, A     ; RX pin
         bsf     TRISC, 6, A     ; TX pin
         bcf     TXSTA, SYNC, A  ; asynchronous mode
-        bcf     TXSTA, BRGH, A  ; low speed mode
-        bcf     BAUDCON, BRG16, A
-        movlw   FOSC/64/BAUD-1  ; 9600 baud
+        bsf     TXSTA, BRGH, A  ; high speed mode
+        bsf     BAUDCON, BRG16, A ; high precision BRG (16bit)
+        movlw   LOW(FOSC/4/BAUD-1)
         movwf   SPBRG, A
-        bcf     PIE1, RCIE, A   ; disable RX ints
-        bcf     PIE1, TXIE, A   ; disable TX ints
+        movlw   HIGH(FOSC/4/BAUD-1)
+        movwf   SPBRGH, A
+        bsf     PIE1, RCIE, A   ; enable RX interrupts
+        bcf     PIE1, TXIE, A   ; disable TX interrupts
         bsf     TXSTA, TXEN, A  ; enable tx
         bsf     RCSTA, CREN, A  ; enable rx
+        clrf    xmtr, A         ; clear the send queue read index
+        clrf    xmtw, A         ; clear the send queue write index
+        clrf    rcvr, A         ; clear the recv queue read index
+        clrf    rcvw, A         ; clear the recv queue write index
         return
 
-        ;; receive a byte in W
-usart_recv
-        btfss   PIR1, RCIF, A   ; check for receive complete
-        bra     usart_recv
-        bcf     STATUS, C, A    ; clear the carry
-        movf    RCREG, W, A     ; load the data accumulator
-        btfsc   RCSTA, OERR, A  ; check for overflow
-        bra     ovflow
-        btfsc   RCSTA, FERR, A  ; check for frame error
-        bra     framerr
+        ;; recv a byte in W
+        ;; return if the queue is empty with C = 1
+usart_recv_nowait:
+        movf    rcvr, W, A
+        subwf   rcvw, W, A
+        bnz     usart_recv_go   ; queue is not empty
+        bsf     STATUS, C, A
         return
-ovflow  movlw   -1              ; overflow
-        bra     clear
-framerr movlw   -2              ; frame error
-clear   bsf     STATUS, C, A
-        bcf     RCSTA, CREN, A  ; clear errors
-        bsf     RCSTA, CREN, A  ;
+        ;; recv a byte in W
+        ;; wait if the queue is empty
+usart_recv:
+        movf    rcvr, W, A
+        subwf   rcvw, W, A
+        bz      usart_recv      ; queue is empty, wait
+usart_recv_go:
+        lfsr    FSR0, rcvbuf
+        movf    rcvr, W, A
+        andlw   BUFMASK
+        movf    PLUSW0, W, A    ; get the data
+        incf    rcvr, F, A      ; consume
+        bcf     STATUS, C, A    ; C = 0
         return
 
         ;; send the byte in W
-usart_send
-        btfss   TXSTA, TRMT, A  ; wait to complete tx
-        bra     usart_send
-        movwf   TXREG, A        ; send W
+        ;; return if the queue is full with C=1
+usart_send_nowait:
+        movwf   tmp, A
+        movf    xmtr, W, A
+        addlw   BUFSIZE
+        subwf   xmtw, W, A
+        bnz     usart_send_go
+        movf    tmp, W, A
+        bsf     STATUS, C, A
+        return
+        ;; send the byte in W
+        ;; wait if the queue is FULL
+usart_send:
+        movwf   tmp, A          ; store W in a temporary
+usart_send_retry:
+        movf    xmtr, W, A
+        addlw   BUFSIZE
+        subwf   xmtw, W, A
+        bz      usart_send_retry ; queue full, wait
+usart_send_go:
+        lfsr    FSR0, xmtbuf
+        movf    xmtw, W, A
+        andlw   BUFMASK
+        movff   tmp, PLUSW0     ; save data
+        incf    xmtw, F, A      ; publish
+        bsf     PIE1, TXIE, A   ; enable TX interrupts
+        bcf     STATUS, C, A    ; C = 0
         return
 
         ;; send a string in TBLPTR
@@ -139,43 +237,44 @@ usart_send_u_loop:
         ;;
         ;; Return: no value
 b16_d5:
+        banksel digits
         movf    POSTINC0, W, A  ; we have to start from MSB
         swapf   INDF0, W, A     ; W  = A2*16 + A3
         iorlw   0xF0            ; W  = A3 - 16
-        movwf   digits+1, A     ; B3 = A3 - 16
-        addwf   digits+1, F, A  ; B3 = 2*(A3 - 16) = 2A3 - 32
+        movwf   digits+1, B     ; B3 = A3 - 16
+        addwf   digits+1, F, B  ; B3 = 2*(A3 - 16) = 2A3 - 32
         addlw   226             ; W  = A3 - 16 - 30 = A3 - 46
-        movwf   digits+2, A     ; B2 = A3 - 46
+        movwf   digits+2, B     ; B2 = A3 - 46
         addlw   50              ; W  = A3 - 40 + 50 = A3 + 4
-        movwf   digits+4, A     ; B0 = A3 + 4
+        movwf   digits+4, B     ; B0 = A3 + 4
 
         movf    POSTDEC0, W, A  ; W  = A3 * 16 + A2
         andlw   0x0F            ; W  = A2
-        addwf   digits+2, F, A  ; B2 = A3 + A2 - 46
-        addwf   digits+2, F, A  ; B2 = A3 + 2A2 - 46
-        addwf   digits+4, F, A  ; B0 = A3 + A2 + 4
+        addwf   digits+2, F, B  ; B2 = A3 + A2 - 46
+        addwf   digits+2, F, B  ; B2 = A3 + 2A2 - 46
+        addwf   digits+4, F, B  ; B0 = A3 + A2 + 4
         addlw   233             ; W  = A2 - 23
-        movwf   digits+3, A     ; B1 = A2 - 23
-        addwf   digits+3, F, A  ; B1 = 2*(A2 - 23) = 2A2 - 46
-        addwf   digits+3, F, A  ; B1 = 3*(A2 - 23) = 3A2 - 69
+        movwf   digits+3, B     ; B1 = A2 - 23
+        addwf   digits+3, F, B  ; B1 = 2*(A2 - 23) = 2A2 - 46
+        addwf   digits+3, F, B  ; B1 = 3*(A2 - 23) = 3A2 - 69
 
         swapf   INDF0, W, A     ; W  = A0 * 16 + A1
         andlw   0x0F            ; W  = A1
-        addwf   digits+3, F, A  ; B1 = 3A2 + A1 - 69
-        addwf   digits+4, F, A  ; B0 = A3 + A2 + A1 + 4 (C = 0)
+        addwf   digits+3, F, B  ; B1 = 3A2 + A1 - 69
+        addwf   digits+4, F, B  ; B0 = A3 + A2 + A1 + 4 (C = 0)
 
-        rlcf    digits+3, F, A  ; B1 = 2*(3A2 + A1 - 69) = 6A2 + 2A1 - 138 (C = 1)
-        rlcf    digits+4, F, A  ; B0 = 2*(A3+A2+A1+4)+C = 2A3+2A2+2A1+9
-        comf    digits+4, F, A  ; B0 = ~(2A3+2A2+2A1+9)= -2A3-2A2-2A1-10
-        rlcf    digits+4, F, A  ; B0 = 2*(-2A3-2A2-2A1-10) = -4A3-4A2-4A1-20
+        rlcf    digits+3, F, B  ; B1 = 2*(3A2 + A1 - 69) = 6A2 + 2A1 - 138 (C = 1)
+        rlcf    digits+4, F, B  ; B0 = 2*(A3+A2+A1+4)+C = 2A3+2A2+2A1+9
+        comf    digits+4, F, B  ; B0 = ~(2A3+2A2+2A1+9)= -2A3-2A2-2A1-10
+        rlcf    digits+4, F, B  ; B0 = 2*(-2A3-2A2-2A1-10) = -4A3-4A2-4A1-20
 
         movf    INDF0, W, A     ; W  = A1*16+A0
         andlw   0x0F            ; W  = A0
-        addwf   digits+4, F, A  ; B0 = A0-4A3-4A2-4A1-20 (C=0)
-        rlcf    digits+1, F, A  ; B3 = 2*(2A3-32) = 4A3 - 64
+        addwf   digits+4, F, B  ; B0 = A0-4A3-4A2-4A1-20 (C=0)
+        rlcf    digits+1, F, B  ; B3 = 2*(2A3-32) = 4A3 - 64
 
         movlw   0x07            ; W  = 7
-        movwf   digits+0, A     ; B4 = 7
+        movwf   digits+0, B     ; B4 = 7
 
         ;; normalization
         ;; B0 = A0-4(A3+A2+A1)-20 range  -5 .. -200
@@ -185,23 +284,23 @@ b16_d5:
         ;; B4 = 7                 7
         movlw   10              ; W  = 10
 b16_d5_lb1:                     ; do {
-        decf    digits+3, F, A  ;   B1 -= 1
-        addwf   digits+4, F, A  ;   B0 += 10
+        decf    digits+3, F, B  ;   B1 -= 1
+        addwf   digits+4, F, B  ;   B0 += 10
         skpc                    ; } while B0 < 0
         bra     b16_d5_lb1
 b16_d5_lb2:                     ; do {
-        decf    digits+2, F, A  ;   B2 -= 1
-        addwf   digits+3, F, A  ;   B1 += 10
+        decf    digits+2, F, B  ;   B2 -= 1
+        addwf   digits+3, F, B  ;   B1 += 10
         skpc                    ; } while B1 < 0
         bra     b16_d5_lb2
 b16_d5_lb3:                     ; do {
-        decf    digits+1, F, A  ;  B3 -= 1
-        addwf   digits+2, F, A  ;  B2 += 10
+        decf    digits+1, F, B  ;  B3 -= 1
+        addwf   digits+2, F, B  ;  B2 += 10
         skpc                    ; } while B2 < 0
         bra     b16_d5_lb3
 b16_d5_lb4:                     ; do {
-        decf    digits+0, F, A  ;  B4 -= 1
-        addwf   digits+1, F, A  ;  B3 += 10
+        decf    digits+0, F, B  ;  B4 -= 1
+        addwf   digits+1, F, B  ;  B3 += 10
         skpc                    ; } while B3 < 0
         bra     b16_d5_lb4
         retlw   0
