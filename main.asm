@@ -49,9 +49,6 @@
         ;; RAM section
 .data   udata
 
-tmp     res     1               ; temporary variable
-digits  res     5               ; digits for bcd conversion
-
         ;; eeprom section
 .edata  code    0xF00000
 
