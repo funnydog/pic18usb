@@ -13,9 +13,6 @@ DEFAULT_STATE   equ     0       ; state after a USB reset
 ADDRESS_STATE   equ     1       ; the device is addressed
 CONFIG_STATE    equ     2       ; the device is configured
 
-;; constants
-MAX_ENDPOINT    equ     2       ; number of endpoints (beyond EP0)
-
 .usbd1  udata
 
 cnt     res     1               ; counter variable
