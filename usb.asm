@@ -521,14 +521,10 @@ set_interface_0:
 
 get_status:
         call    check_request_acl ; ACL check
-        btfsc   STATUS, C, A
-        bra     get_status_error
-        ;; prepare the response
-        banksel BD0IAH
-        movf    BD0IAH, W, B
-        movwf   FSR0H, A
-        movf    BD0IAL, W, B
-        movwf   FSR0L, A        ; FSR0 = EP0 IN buffer
+        bc      get_status_err
+
+        movff   BD0IAH, FSR0H
+        movff   BD0IAL, FSR0L   ; FSR0 == ep0 IN buffer
 
         banksel bufdata
         movf    bufdata+0, W, B ; bmRequestType
@@ -538,31 +534,28 @@ get_status:
         bz      get_status_interface
         addlw   -1
         bz      get_status_endpoint
-get_status_error:
+get_status_err:
         bra     ep0_stall_error
 get_status_device:
         movf    devstat, W, B
-        movwf   POSTINC0, A
+        movwf   POSTINC0, A      ; byte[0] = devstat
         bra     get_status_send
 get_status_interface:
-        movlw   ADDRESS_STATE
-        subwf   uswstat, W, B
-        bz      get_status_error ; request not allowed in ADDRESS_STATE
         movlw   1                ; max number of interfaces
         subwf   bufdata+4, W, B  ; wIndex (interface number)
-        bc      get_status_error ; interface doesn't exist
-        clrf    POSTINC0, A
+        bc      get_status_err   ; interface doesn't exist
+        clrf    POSTINC0, A      ; byte[0] = 0
         bra     get_status_send
 get_status_endpoint:
         call    check_ep_direction
-        bc      get_status_error
+        bc      get_status_err
         movf    bufdata+4, W, B
         call    lookup_bdt
-        movf    INDF1, W, A
-        andlw   0x04
-        movwf   INDF0, A
-        rrncf   INDF0, F, A
-        rrncf   POSTINC0, F, A  ; shift the stall bit to the left
+        movf    INDF1, W, A     ; check the stall bit
+        andlw   1<<BSTALL
+        movwf   INDF0, A        ; 00 00 00 00 00 D2 00 00
+        rrncf   INDF0, F, A     ; 00 00 00 00 00 00 D2 00
+        rrncf   POSTINC0, F, A  ; 00 00 00 00 00 00 00 D2
         bra     get_status_send
 get_status_send:
         clrf    INDF0, A
