@@ -341,15 +341,15 @@ get_descriptor:
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
         movf    bufdata+3, W, B ; wValueHigh
-        addlw   -1              ; 0x01
+        addlw   -1              ; 0x01 - Device
         bz      get_descriptor_device
-        addlw   -1              ; 0x02
+        addlw   -1              ; 0x02 - Configuration
         bz      get_descriptor_configuration
-        addlw   -1              ; 0x03
+        addlw   -1              ; 0x03 - String
         bz      get_descriptor_string
-        addlw   -30             ; 0x21
+        addlw   -30             ; 0x21 - HID
         bz      get_descriptor_hid
-        addlw   -1              ; 0x22
+        addlw   -1              ; 0x22 - HID Report
         bz      get_descriptor_hidreport
         bra     ep0_stall_error
 
