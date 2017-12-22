@@ -2,9 +2,9 @@ LINKSCRIPT = /usr/share/gputils/lkr/18f25k50_g.lkr
 OBJECTS = delay.o main.o usart.o usb.o
 OUTPUT = usb.hex
 
-CFLAGS = -std=c99 -Wall -Werror -I/usr/include/libusb-1.0
+CFLAGS = -std=c99 -Wall -Werror -I/usr/include/libusb-1.0 -I/usr/include/hidapi
 
-all: $(OUTPUT) client
+all: $(OUTPUT) client hidclient
 
 $(OUTPUT): $(OBJECTS)
 	gplink -m -c -s $(LINKSCRIPT) -o $@ $^
@@ -21,11 +21,14 @@ usb.o: config.inc usb.inc
 .PHONY = clean erase flash
 
 clean:
-	@rm -f client.o client
+	@rm -f client hidclient
 	@rm -f *.o *.hex *.cod *.map *.lst *.cof *~
 
 client: client.o
 	$(CC) -o $@ $^ -lusb-1.0
+
+hidclient: hidclient.o
+	$(CC) -o $@ $^ -lhidapi-hidraw
 
 erase:
 	pk2cmd -R -P -E
