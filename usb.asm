@@ -14,7 +14,6 @@ ADDRESS_STATE   equ     1       ; the device is addressed
 CONFIG_STATE    equ     2       ; the device is configured
 
 ;; constants
-MAX_CONFIG      equ     1       ; number of configurations
 MAX_INTERFACES  equ     1       ; number of interfaces
 MAX_ENDPOINT    equ     2       ; number of endpoints (beyond EP0)
 
@@ -362,8 +361,9 @@ get_descriptor_device:
 
 get_descriptor_configuration:
         movf    bufdata+2, W, B ; wValue
-        btfss   STATUS, Z, A
+        bz      get_description_configuration_0
         bra     ep0_stall_error
+get_description_configuration_0:
         movlw   (Configuration1-DescriptorBegin)
         movwf   dptr, B
         call    Descriptor
@@ -425,15 +425,24 @@ set_configuration:
         btfsc   STATUS, C, A
         bra     ep0_stall_error
 
-        movf    bufdata+2, W, B
-        sublw   MAX_CONFIG
-        btfss   STATUS, C, A
-        bra     ep0_stall_error
+        ;; save the configuration number in devconf
+        movf    bufdata+2, W, B ; wValue
+        bz      unset_configuration
+        addlw   -1
+        bz      set_configuration_1
+        bra     ep0_stall_error ; unknown configuration
 
-        ;; clear all the EP control registers except EP0
+unset_configuration:
         call    ep_disable_1_15 ; disable eps from 1 to 15
+        movlw   CONFIG_STATE
+        movwf   uswstat, B      ; uswstate = CONFIG_STATE
+        clrf    devconf, B      ; deconf = 0
+        bra     ep0_send_ack
 
-        ;; setup the EP1 Buffer Descriptor Table (OUT && IN)
+set_configuration_1:
+        call    ep_disable_3_15 ; disable eps from 3 to 15
+
+        ;; setup the endpoint 1 (IN, interrupt)
         banksel BD1IBC
         movlw   8               ; size of the packet
         movwf   BD1IBC, B
@@ -446,6 +455,7 @@ set_configuration:
         movlw   1<<EPHSHK|1<<EPINEN
         movwf   UEP1, A         ; enable input, handshake
 
+        ;; setup the endpoint 2 (OUT, interrupt)
         banksel BD2OBC
         movlw   8               ; size of the packet
         movwf   BD2OBC, B
@@ -458,14 +468,11 @@ set_configuration:
         movlw   1<<EPHSHK|1<<EPOUTEN
         movwf   UEP2, A         ; enable output, handshake
 
-        ;; save the configuration number in devconf
-        movf    bufdata+2, W, B ; wValue
-        movwf   devconf, B      ; devconf = wValue
+        movlw   1
+        banksel devconf
+        movwf   devconf, B      ; devconf = 1
         movlw   ADDRESS_STATE
-        btfss   STATUS, Z, A
-        movlw   CONFIG_STATE
-        movwf   uswstat, B      ; uswstat = (devconf == 0) ? ADDRESS_STATE : CONFIG_STATE
-
+        movwf   uswstat, B      ; uswtat = ADDRESS_STATE
         bra     ep0_send_ack
 
 get_interface:
