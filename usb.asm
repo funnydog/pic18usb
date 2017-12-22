@@ -61,6 +61,24 @@ usb_init:
 
         btfsc   UCON, SE0, A    ; wait until SE0 == 0
         bra     $-2
+
+        banksel USBDATA+16
+        movlw   0xDE
+        movwf   USBDATA+16, B
+        movlw   0xAD
+        movwf   USBDATA+17, B
+        movlw   0xBE
+        movwf   USBDATA+18, B
+        movlw   0xEF
+        movwf   USBDATA+19, B
+        movlw   0xCA
+        movwf   USBDATA+20, B
+        movlw   0xFE
+        movwf   USBDATA+21, B
+        movlw   0xBA
+        movwf   USBDATA+22, B
+        movlw   0xBE
+        movwf   USBDATA+23, B
         return
 
 ;;; called to service the USB conditions
