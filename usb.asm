@@ -346,7 +346,7 @@ get_descriptor:
 
 get_descriptor_device:
         movlw   LOW(Device-DescriptorBegin)
-        bra     send_offset
+        bra     send_with_length
 
 get_descriptor_configuration:
         movf    bufdata+2, W, B ; wValue
@@ -360,7 +360,7 @@ get_descriptor_configuration:
         movlw   2
         subwf   dptr, F, B
         call    Descriptor
-        bra     send_check_length
+        bra     send_data
 
 get_descriptor_string:
         movf    bufdata+2, W, B ; wValue
@@ -372,13 +372,13 @@ get_descriptor_string:
         bra     standard_requests_err
 get_descriptor_string0:
         movlw   (String0-DescriptorBegin)
-        bra     send_offset
+        bra     send_with_length
 get_descriptor_string1:
         movlw   (String1-DescriptorBegin)
-        bra     send_offset
+        bra     send_with_length
 get_descriptor_string2:
         movlw   (String2-DescriptorBegin)
-        bra     send_offset
+        bra     send_with_length
 
 get_configuration:
         call    check_request_acl ; ACL check
@@ -741,7 +741,9 @@ load_ep_bdt:
         incf    FSR1H, F, A     ; FSR1 points to BDn[OI]ST
         return
 
-send_offset:
+        ;; send the data when
+        ;; the first byte of the data is the length
+send_with_length:
         movwf   dptr, B         ; offset of the data from the beginning
         call    Descriptor
         movwf   bleft, B        ; length of the bytes to send
@@ -755,7 +757,9 @@ send_offset:
         call    usart_send
 #endif
 
-send_check_length:
+        ;; send the data in TABLAT
+        ;; until bleft is zero
+send_data:
         movf    bufdata+7, W, B
         bnz     send_descriptor_packet
         movf    bleft, W, B
