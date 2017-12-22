@@ -105,8 +105,7 @@ usb_service_actv_end:
         bcf     UIR, TRNIF, A
 
         ;; disable all the endpoints
-        clrf    UEP0, A         ; clear the EP0
-        call    clear_endpoints ; clear the other EPs
+        call    ep_disable_0_15 ; disable eps from 0 to 15
 
         ;; setup the EP0 Buffer Descriptor Table (OUT && IN)
         banksel BD0OBC
@@ -179,11 +178,15 @@ usb_service_reset_end:
 usb_service_trn_end:
         return
 
-        ;; Clear the endpoint from 1 to 15
-        ;; but skip the EP0
-clear_endpoints:
+        ;; disable the endpoints from 0 to 15
+ep_disable_0_15:
+        clrf    UEP0, A
+        ;; disable the endpoints from 1 to 15
+ep_disable_1_15:
         clrf    UEP1, A
         clrf    UEP2, A
+        ;; disable the endpoints from 3 to 15
+ep_disable_3_15:
         clrf    UEP3, A
         clrf    UEP4, A
         clrf    UEP5, A
@@ -428,7 +431,7 @@ set_configuration:
         bra     ep0_stall_error
 
         ;; clear all the EP control registers except EP0
-        call    clear_endpoints
+        call    ep_disable_1_15 ; disable eps from 1 to 15
 
         ;; setup the EP1 Buffer Descriptor Table (OUT && IN)
         banksel BD1IBC
