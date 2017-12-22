@@ -156,6 +156,9 @@ usb_service_reset_end:
         ;; Transaction complete
         btfss   UIR, TRNIF, A
         bra     usb_service_trn_end
+
+        ;; save the BD registers owned by the SIE
+        ;; in the bufdesc buffer
         movlw   HIGH(BD0OST)
         movwf   FSR0H, A        ; FSR0H = MSB 0x400
         movf    USTAT, W, A     ; content of USTAT
@@ -163,31 +166,29 @@ usb_service_reset_end:
         movwf   custat, B       ; save a copy of USTAT
         andlw   0x7C            ; mask out EP and DIRECTION (OUT, IN)
         movwf   FSR0L, A        ; FSR0L = LSB into the endpoint
-
-        ;; save the BD registers in the bufdesc buffer
         banksel bufdesc
         movf    POSTINC0, W, A
-        movwf   bufdesc+0, B
+        movwf   bufdesc+0, B    ; BDnxST
         movf    POSTINC0, W, A
-        movwf   bufdesc+1, B
+        movwf   bufdesc+1, B    ; BDnxCNT
         movf    POSTINC0, W, A
-        movwf   bufdesc+2, B
+        movwf   bufdesc+2, B    ; BDnxAL
         movf    POSTINC0, W, A
-        movwf   bufdesc+3, B
+        movwf   bufdesc+3, B    ; BDnxAH
 
         bcf     UIR, TRNIF, A   ; advance the USTAT FIFO
 
-        movf    bufdesc+0, W, B
-        andlw   0x3C            ; mask out the PID
-        xorlw   0x0D<<2         ; SETUP
-        btfsc   STATUS, Z, A
-        bra     usb_setup_token
-        xorlw   (0x09<<2)^(0x0D<<2) ; IN
-        btfsc   STATUS, Z, A
-        bra     usb_in_token
-        xorlw   (0x01<<2)^(0x09<<2) ; OUT
+        movf    bufdesc+0, W, B ; extract the packet identifier
+        andlw   0x3C            ; 00 00 P3 P2 P1 P0 00 00
+        addlw   -(1<<2)         ; 0b0001 - token out
         btfsc   STATUS, Z, A
         bra     usb_out_token
+        addlw   -(8<<2)         ; 0b1001 - token in
+        btfsc   STATUS, Z, A
+        bra     usb_in_token
+        addlw   -(4<<2)         ; 0b1101 - token setup
+        btfsc   STATUS, Z, A
+        bra     usb_setup_token
 usb_service_trn_end:
         return
 
@@ -259,7 +260,6 @@ usb_setup_token:
         movwf   FSR0H, A        ; FSR0 points to the buffer for EP0
         lfsr    FSR1, bufdata   ; FSR1 points to the private bufdata
 
-        ;; movlw   MAXPACKETSIZE0
         movf    bufdesc+1, W, B ; load the byte count
         sublw   MAXPACKETSIZE0
         movlw   MAXPACKETSIZE0
