@@ -470,10 +470,6 @@ get_interface:
         btfsc   STATUS, C, A
         bra     ep0_stall_error
 
-        movf    uswstat, W, B
-        sublw   CONFIG_STATE
-        btfss   STATUS, Z, A
-        bra     ep0_stall_error
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
         btfss   STATUS, C, A
@@ -494,10 +490,6 @@ set_interface:
         btfsc   STATUS, C, A
         bra     ep0_stall_error
 
-        movf    uswstat, W, B
-        sublw   CONFIG_STATE
-        btfss   STATUS, Z, A
-        bra     ep0_stall_error
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
         btfss   STATUS, C, A
