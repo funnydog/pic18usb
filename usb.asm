@@ -647,14 +647,14 @@ usb_in_ep1:
         movlw   '<'
         call    usart_send
 #endif
-        banksel BD1IST
+        banksel BD1IBC
         movlw   8
         movwf   BD1IBC, B
-        movlw   1<<DTS
-        xorwf   BD1IST, W, B    ; toggle DATA bit
+        movf    BD1IST, W, B
+        xorlw   1<<DTS          ; toggle DATA bit
         andlw   1<<DTS          ; filter it
         iorlw   1<<UOWN|1<<DTSEN
-        movwf   BD1IST, B       ; UOWN, DATA1
+        movwf   BD1IST, B
         return
 usb_in_ep2:
         return                  ; ep2 is an OUT endpoint
@@ -696,8 +696,8 @@ usb_out_ep2:
         call    usart_send
 #endif
         banksel BD2OST
-        movlw   1<<DTS
-        xorwf   BD2OST, W, B    ; toggle DATA bit
+        movf    BD2OST, W, B
+        xorlw   1<<DTS          ; toggle DATA bit
         andlw   1<<DTS          ; filter it
         iorlw   1<<UOWN|1<<DTSEN
         movwf   BD2OST, B
@@ -855,8 +855,8 @@ send_loop:
 
         ;; send the data
         banksel BD0IST
-        movlw   1<<DTS
-        xorwf   BD0IST, W, B    ; toggle DATA bit
+        movf    BD0IST, W, B
+        xorlw   1<<DTS          ; toggle DATA bit
         andlw   1<<DTS          ; filter it
         iorlw   1<<UOWN|1<<DTSEN
         movwf   BD0IST, B       ; UOWN, DATA[01] bit
