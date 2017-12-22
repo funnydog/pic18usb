@@ -199,9 +199,24 @@ clear_endpoints:
         clrf    UEP15, A
         return
 
-        ;; called whenever we encounter an error
-        ;; with control packets to EP0
-error_stall:
+        ;; send ack packet on successful transaction
+ep0_send_ack:
+        movlw   0
+        ;; send data packet made of W bytes
+ep0_send_data:
+        banksel BD0IBC
+        movwf   BD0IBC, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
+        return
+
+        ;; stall input and output of EP0
+        ;; whenever we encounter an error
+ep0_stall_error:
+#ifdef USARTDEBUG
+        movlw   'E'
+        call    usart_send
+#endif
         banksel devreq
         movlw   0xFF
         movwf   devreq, B       ; set devreq to 0xFF
@@ -277,7 +292,7 @@ usb_setup_token_1:
         xorlw   2<<5 ^ 1<<5     ; 2 = vendor request
         btfsc   STATUS, Z, A
         bra     vendor_requests
-        bra     error_stall  ; error condition
+        bra     ep0_stall_error  ; error condition
 
         ;; process the standard requests
 standard_requests:
@@ -290,7 +305,7 @@ standard_requests:
         addlw   255 - 12
         addlw   (12 - 0) + 1
         btfss   STATUS, C, A
-        bra     standard_requests_err ; check if devreq is in range 0..12
+        bra     ep0_stall_error ; check if devreq is in range 0..12
 #ifdef USARTDEBUG
         ;; send the R number
         movlw   'R'
@@ -307,31 +322,21 @@ standard_requests:
         rlncf   devreq, W, B
         addlw   LOW(standard_requests_table)
         movwf   PCL, A
-standard_requests_err:
-#ifdef USARTDEBUG
-        movlw   'E'
-        call    usart_send
-#endif
-        bra     error_stall  ; error condition
 
 set_address:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
         btfsc   bufdata+2, 7, B ; check if the address is legal
-        bra     standard_requests_err
+        bra     ep0_stall_error
         movf    bufdata+2, W, B ; wValue
         movwf   penaddr, B      ; store the address
-        banksel BD0IBC
-        clrf    BD0IBC, B       ; set the IN byte count to 0
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
 get_descriptor:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
@@ -346,7 +351,7 @@ get_descriptor:
         bz      get_descriptor_hid
         addlw   -1              ; 0x22
         bz      get_descriptor_hidreport
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
 get_descriptor_device:
         movlw   LOW(Device-DescriptorBegin)
@@ -355,7 +360,7 @@ get_descriptor_device:
 get_descriptor_configuration:
         movf    bufdata+2, W, B ; wValue
         btfss   STATUS, Z, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
         movlw   (Configuration1-DescriptorBegin)
         movwf   dptr, B
         call    Descriptor
@@ -382,7 +387,7 @@ get_descriptor_string:
         bz      get_descriptor_string1
         addlw   -1
         bz      get_descriptor_string2
-        bra     standard_requests_err
+        bra     ep0_stall_error
 get_descriptor_string0:
         movlw   (String0-DescriptorBegin)
         bra     send_with_length
@@ -396,7 +401,7 @@ get_descriptor_string2:
 get_configuration:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         banksel BD0IAH
         movf    BD0IAH, W, B
@@ -409,22 +414,18 @@ get_configuration:
         btfss   STATUS, Z, A    ;   INDF0 = 0;
         movf    devconf, W, B   ; else
         movwf   INDF0, A        ;   INDF0 = devconf;
-        banksel BD0IBC
-        movlw   0x01
-        movwf   BD0IBC, B       ; byte count = 1
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        movlw   1
+        bra     ep0_send_data
 
 set_configuration:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         movf    bufdata+2, W, B
         sublw   MAX_CONFIG
         btfss   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         ;; clear all the EP control registers except EP0
         call    clear_endpoints
@@ -462,26 +463,21 @@ set_configuration:
         movlw   CONFIG_STATE
         movwf   uswstat, B      ; uswstat = (devconf == 0) ? ADDRESS_STATE : CONFIG_STATE
 
-        ;; send the reply packet
-        banksel BD0IBC
-        clrf    BD0IBC, B       ; byte count = 0
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
 get_interface:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         btfss   STATUS, Z, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
         btfss   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         ;; send the reply packet
         banksel BD0IAH
@@ -491,31 +487,22 @@ get_interface:
         movwf   FSR0L, A
         clrf    INDF0           ; always zero the bAlternateSetting
         movlw   1
-        movwf   BD0IBC, B       ; byte count = 1
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_data
 
 set_interface:
         call    check_request_acl ; ACL check
         btfsc   STATUS, C, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
         movf    uswstat, W, B
         sublw   CONFIG_STATE
         btfss   STATUS, Z, A
-        bra     standard_requests_err
+        bra     ep0_stall_error
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
         btfss   STATUS, C, A
-        bra     standard_requests_err
-
-        ;; send the reply packet
-        banksel BD0IBC
-        clrf    BD0IBC, B       ; byte count = 0
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_stall_error
+        bra     ep0_send_ack
 
 get_status:
         call    check_request_acl ; ACL check
@@ -537,7 +524,7 @@ get_status:
         addlw   -1
         bz      get_status_endpoint
 get_status_error:
-        bra     error_stall
+        bra     ep0_stall_error
 get_status_device:
         movf    devstat, W, B
         movwf   POSTINC0, A
@@ -563,12 +550,8 @@ get_status_endpoint:
         bra     get_status_send
 get_status_send:
         clrf    INDF0, A
-        banksel BD0IBC
         movlw   0x02
-        movwf   BD0IBC, B       ; byte count = 2
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_data
 
 clear_feature:
 set_feature:
@@ -582,7 +565,7 @@ set_feature:
         addlw   -1
         bz      xx_feature_ep
 xx_feature_err:
-        bra     error_stall
+        bra     ep0_stall_error
 xx_feature_dev:
         movf    bufdata+2, W, B ; ensure the feature is Remote Wakeup
         bz      xx_feature_err
@@ -607,11 +590,7 @@ xx_feature_ep:
         movlw   0x84            ; SET_FEATURE = set stall condition
         movwf   INDF1, A
 xx_feature_send:
-        banksel BD0IBC
-        clrf    BD0IBC, B
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
         ;; process the class requests
 class_requests:
@@ -622,14 +601,10 @@ class_requests:
         movf    bufdata+1, W, B
         addlw   -0x0a           ; SET_IDLE
         bz      set_idle
-        bra     standard_requests_err
+        bra     ep0_stall_error
 set_idle:
 class_requests_ack:
-        banksel BD0IBC
-        clrf    BD0IBC, B
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
         ;; process the vendor requests
 vendor_requests:
@@ -639,16 +614,12 @@ vendor_requests:
 #endif
         movf    bufdata+1, W, B ; bRequest
         bz      vendor_set
-        bra     error_stall
+        bra     ep0_stall_error
 vendor_set:
         movf    bufdata+2, W, B ; wValue
         movwf   LATB, A
 vendor_send:
-        banksel BD0IBC
-        clrf    BD0IBC, B
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
         ;; process the IN (send to the host) token
 usb_in_token:
@@ -660,7 +631,7 @@ usb_in_token:
         bz      usb_in_ep1
         addlw   -(1<<3)
         bz      usb_in_ep2
-        bra     standard_requests_err
+        bra     ep0_stall_error
 usb_in_ep1:
         ;; IN
         movlw   '<'
@@ -675,7 +646,7 @@ usb_in_ep1:
         movwf   BD1IST, B       ; UOWN, DATA1
         return
 usb_in_ep2:
-        bra     standard_requests_err
+        bra     ep0_stall_error
 
 usb_in_ep0:
         movf    devreq, W, B
@@ -706,7 +677,7 @@ usb_out_token:
         addlw   -(1<<3)
         bz      usb_out_ep2
 usb_out_ep1:
-        bra     standard_requests_err
+        bra     ep0_stall_error
 usb_out_ep2:
         movlw   '>'
         call    usart_send
@@ -724,10 +695,7 @@ usb_out_ep0:
         movwf   BD0OBC, B       ; MAXPACKETSIZE0 bytes
         movlw   1<<UOWN|1<<DTSEN
         movwf   BD0OST, B       ; UOWN, DATA0
-        clrf    BD0IBC, B       ; 0 bytes
-        movlw   1<<UOWN|1<<DTS|1<<DTSEN
-        movwf   BD0IST, B       ; UOWN, DATA1
-        return
+        bra     ep0_send_ack
 
         ;; check if the request is allowed for each state
 check_request_acl:
@@ -907,17 +875,17 @@ Descriptor:
 standard_requests_table:
         bra     get_status            ; GET_STATUS        (0)
         bra     clear_feature         ; CLEAR_FEATURE     (1)
-        bra     standard_requests_err ; RESERVED          (2)
+        bra     ep0_stall_error       ; RESERVED          (2)
         bra     set_feature           ; SET_FEATURE       (3)
-        bra     standard_requests_err ; RESERVED          (4)
+        bra     ep0_stall_error       ; RESERVED          (4)
         bra     set_address           ; SET_ADDRESS       (5)
         bra     get_descriptor        ; GET_DESCRIPTOR    (6)
-        bra     standard_requests_err ; SET_DESCRIPTOR    (7)
+        bra     ep0_stall_error       ; SET_DESCRIPTOR    (7)
         bra     get_configuration     ; GET_CONFIGURATION (8)
         bra     set_configuration     ; SET_CONFIGURATION (9)
         bra     get_interface         ; GET_INTERFACE    (10)
         bra     set_interface         ; SET_INTERFACE    (11)
-        bra     standard_requests_err ; SYNCH_FRAME      (12)
+        bra     ep0_stall_error       ; SYNCH_FRAME      (12)
 
 check_request_table:
         bra     check_allow_onlyep0    ; GET_STATUS        (0)
