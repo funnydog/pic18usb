@@ -286,10 +286,10 @@ usb_setup_token_1:
         andlw   0x60            ; get the request type (D5..D6)
         btfsc   STATUS, Z, A
         bra     standard_requests
-        xorlw   1<<5            ; 1 = class request
+        addlw   -(1<<5)         ; 1 == class request
         btfsc   STATUS, Z, A
         bra     class_requests
-        xorlw   2<<5 ^ 1<<5     ; 2 = vendor request
+        addlw   -(1<<5)         ; 2 == vendor_request
         btfsc   STATUS, Z, A
         bra     vendor_requests
         bra     ep0_stall_error  ; error condition
