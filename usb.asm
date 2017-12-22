@@ -633,9 +633,10 @@ usb_in_token:
         bz      usb_in_ep2
         return
 usb_in_ep1:
-        ;; IN
+#ifdef USARTDEBUG
         movlw   '<'
         call    usart_send
+#endif
         banksel BD1IST
         movlw   8
         movwf   BD1IBC, B
@@ -680,8 +681,10 @@ usb_out_token:
 usb_out_ep1:
         return                  ; ep1 is an IN endpoint
 usb_out_ep2:
+#ifdef USARTDEBUG
         movlw   '>'
         call    usart_send
+#endif
         banksel BD2OST
         movlw   1<<DTS
         xorwf   BD2OST, W, B    ; toggle DATA bit
