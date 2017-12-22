@@ -364,8 +364,7 @@ get_descriptor_configuration:
         bra     ep0_stall_error
 get_description_configuration_0:
         movlw   (Configuration1-DescriptorBegin)
-        movwf   dptr, B
-        call    Descriptor
+        call    save_lookup_descriptor
         movlw   (Configuration1End-Configuration1)
         movwf   bleft, B
         bra     send_data
@@ -376,8 +375,7 @@ get_descriptor_hid:
 
 get_descriptor_hidreport:
         movlw   LOW(HIDReport-DescriptorBegin)
-        movwf   dptr, B
-        call    Descriptor
+        call    save_lookup_descriptor
         movlw   HIDReportEnd-HIDReport
         movwf   bleft, B
         bra     send_data
@@ -785,8 +783,7 @@ load_ep_bdt:
         ;; send the data when
         ;; the first byte of the data is the length
 send_with_length:
-        movwf   dptr, B         ; offset of the data from the beginning
-        call    Descriptor
+        call    save_lookup_descriptor
         movwf   bleft, B        ; length of the bytes to send
 #ifdef USARTDEBUG
         call    usart_send_nl
@@ -835,8 +832,10 @@ send_descriptor_packet_2:
         movf    BD0IAL, W, B
         movwf   FSR0L, A        ; FSR0 = pointer to USB RAM
 
-        ;; copy the data from the table
-        call    Descriptor      ; somebody could have changed the TBLPTR
+        ;; restore the lookup table
+        banksel dptr
+        movf    dptr, W, B
+        call    lookup_descriptor
         banksel cnt
 send_loop:
         tblrd   *+
@@ -855,20 +854,19 @@ send_loop:
         movwf   BD0IST, B       ; UOWN, DATA[01] bit
         return
 
-        ;; load the data in the offset into the table
-        ;; and return the length of the data
-Descriptor:
-        movlw   UPPER(DescriptorBegin)
-        movwf   TBLPTRU, A
-        movlw   HIGH(DescriptorBegin)
-        movwf   TBLPTRH, A
-        movlw   LOW(DescriptorBegin)
-
+        ;; save the offset and
+save_lookup_descriptor:
         banksel dptr
-        addwf   dptr, W, B
+        movwf   dptr, B
+        ;; lookup the descriptor from the offset in W
+lookup_descriptor:
+        clrf    TBLPTRU, A
+        clrf    TBLPTRH, A
+        addlw   LOW(DescriptorBegin)
         movwf   TBLPTRL, A
-        movlw   0
+        movlw   HIGH(DescriptorBegin)
         addwfc  TBLPTRH, F, A
+        movlw   UPPER(DescriptorBegin)
         addwfc  TBLPTRU, F, A
         tblrd   *
         movf    TABLAT, W
