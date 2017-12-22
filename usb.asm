@@ -147,6 +147,7 @@ usb_service_reset_end:
         movlw   HIGH(BD0OST)
         movwf   FSR0H, A        ; FSR0H = MSB 0x400
         movf    USTAT, W, A     ; content of USTAT
+        banksel custat
         movwf   custat, B       ; save a copy of USTAT
         andlw   0x7C            ; mask out EP and DIRECTION (OUT, IN)
         movwf   FSR0L, A        ; FSR0L = LSB into the endpoint
