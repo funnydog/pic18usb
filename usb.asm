@@ -289,7 +289,8 @@ standard_requests:
         movwf   devreq, B
         addlw   255 - 12
         addlw   (12 - 0) + 1
-        bnc     standard_requests_err ; check if devreq is in range 0..12
+        btfss   STATUS, C, A
+        bra     standard_requests_err ; check if devreq is in range 0..12
 #ifdef USARTDEBUG
         ;; send the R number
         movlw   'R'
@@ -315,7 +316,8 @@ standard_requests_err:
 
 set_address:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
         btfsc   bufdata+2, 7, B ; check if the address is legal
         bra     standard_requests_err
         movf    bufdata+2, W, B ; wValue
@@ -328,7 +330,8 @@ set_address:
 
 get_descriptor:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
 
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
@@ -347,7 +350,8 @@ get_descriptor_device:
 
 get_descriptor_configuration:
         movf    bufdata+2, W, B ; wValue
-        bnz     standard_requests_err
+        btfss   STATUS, Z, A
+        bra     standard_requests_err
         movlw   (Configuration1-DescriptorBegin)
         addlw   2
         movwf   dptr, B
@@ -378,7 +382,8 @@ get_descriptor_string2:
 
 get_configuration:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
 
         banksel BD0IAH
         movf    BD0IAH, W, B
@@ -400,11 +405,13 @@ get_configuration:
 
 set_configuration:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
 
         movf    bufdata+2, W, B
         sublw   MAX_CONFIG
-        bnc     standard_requests_err
+        btfss   STATUS, C, A
+        bra     standard_requests_err
 
         ;; clear all the EP control registers except EP0
         call    clear_endpoints
@@ -426,14 +433,17 @@ set_configuration:
 
 get_interface:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
 
         movf    uswstat, W, B
         sublw   CONFIG_STATE
-        bnz     standard_requests_err
+        btfss   STATUS, Z, A
+        bra     standard_requests_err
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
-        bnc     standard_requests_err
+        btfss   STATUS, C, A
+        bra     standard_requests_err
 
         ;; send the reply packet
         banksel BD0IAH
@@ -450,14 +460,17 @@ get_interface:
 
 set_interface:
         call    check_request_acl ; ACL check
-        bc      standard_requests_err
+        btfsc   STATUS, C, A
+        bra     standard_requests_err
 
         movf    uswstat, W, B
         sublw   CONFIG_STATE
-        bnz     standard_requests_err
+        btfss   STATUS, Z, A
+        bra     standard_requests_err
         movlw   MAX_INTERFACES
         subwf   bufdata+4, W, B ; wIndex
-        bnc     standard_requests_err
+        btfss   STATUS, C, A
+        bra     standard_requests_err
 
         ;; send the reply packet
         banksel BD0IBC
@@ -468,7 +481,8 @@ set_interface:
 
 get_status:
         call    check_request_acl ; ACL check
-        bc      get_status_error
+        btfsc   STATUS, C, A
+        bra     get_status_error
         ;; prepare the response
         banksel BD0IAH
         movf    BD0IAH, W, B
