@@ -764,23 +764,19 @@ check_request_toggle:
         ;; (uses FSR1)
         ;; set the Carry flag in case of mismatches
 check_ep_direction:
+        banksel bufdata+4
+        movf    bufdata+4, W, B ; D7 00 00 00 D4 D3 D2 D1
+        andlw   0x0F
         lfsr    FSR1, UEP0
-        movf    bufdata+4, W, B ; D7 = direction, D3..D0 = endpoint
-        andlw   0x7F
-        sublw   MAX_ENDPOINT    ; check if EP exists
-        bnc     check_ep_direction_err
-        sublw   MAX_ENDPOINT
-        addwf   FSR1L, F, A
+        addwf   FSR1L, A
         btfsc   STATUS, C, A
-        incf    FSR1H, F, A
-        bcf     STATUS, C, A    ; no error by default
-        btfss   bufdata+4, 7, B ; bit7 set if direction == IN
-        bra     check_ep_direction_out
-        btfss   PLUSW1, EPINEN, A
-        bra     check_ep_direction_err
-check_ep_direction_out:
-        btfss   PLUSW1, EPOUTEN, A
-check_ep_direction_err:
+        incf    FSR1H, F, A     ; FSR1 = UEPn
+        movlw   1<<EPOUTEN
+        btfsc   bufdata+4, 7, B
+        movlw   1<<EPINEN
+        andwf   INDF1, W, A     ; filter out the direction of the UEPn
+        bcf     STATUS, C, A
+        btfsc   STATUS, Z, A    ; Z means error
         bsf     STATUS, C, A
         return
 
