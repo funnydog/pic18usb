@@ -16,7 +16,7 @@ CONFIG_STATE    equ     2       ; the device is configured
 ;; constants
 MAX_CONFIG      equ     1       ; number of configurations
 MAX_INTERFACES  equ     1       ; number of interfaces
-MAX_ENDPOINT    equ     0       ; number of endpoints (beyond EP0)
+MAX_ENDPOINT    equ     2       ; number of endpoints (beyond EP0)
 
 .usbd1  udata
 
@@ -336,12 +336,16 @@ get_descriptor:
         movf    bufdata+1, W, B ; bRequest
         movwf   devreq, B       ; store
         movf    bufdata+3, W, B ; wValueHigh
-        addlw   -1
+        addlw   -1              ; 0x01
         bz      get_descriptor_device
-        addlw   -1
+        addlw   -1              ; 0x02
         bz      get_descriptor_configuration
-        addlw   -1
+        addlw   -1              ; 0x03
         bz      get_descriptor_string
+        addlw   -30             ; 0x21
+        bz      get_descriptor_hid
+        addlw   -1              ; 0x22
+        bz      get_descriptor_hidreport
         bra     standard_requests_err
 
 get_descriptor_device:
@@ -353,13 +357,22 @@ get_descriptor_configuration:
         btfss   STATUS, Z, A
         bra     standard_requests_err
         movlw   (Configuration1-DescriptorBegin)
-        addlw   2
         movwf   dptr, B
         call    Descriptor
+        movlw   (Configuration1End-Configuration1)
         movwf   bleft, B
-        movlw   2
-        subwf   dptr, F, B
+        bra     send_data
+
+get_descriptor_hid:
+        movlw   LOW(HIDInterface-DescriptorBegin)
+        call    send_with_length
+
+get_descriptor_hidreport:
+        movlw   LOW(HIDReport-DescriptorBegin)
+        movwf   dptr, B
         call    Descriptor
+        movlw   HIDReportEnd-HIDReport
+        movwf   bleft, B
         bra     send_data
 
 get_descriptor_string:
@@ -415,6 +428,31 @@ set_configuration:
 
         ;; clear all the EP control registers except EP0
         call    clear_endpoints
+
+        ;; setup the EP1 Buffer Descriptor Table (OUT && IN)
+        banksel BD1IBC
+        movlw   8               ; size of the packet
+        movwf   BD1IBC, B
+        movlw   LOW(USBDATA+16)
+        movwf   BD1IAL, B       ; buffer for EP1 (LSB)
+        movlw   HIGH(USBDATA+16)
+        movwf   BD1IAH, B       ; buffer for EP1 (MSB)
+        movlw   1<<UOWN|1<<DTSEN
+        movwf   BD1IST, B       ; UOWN, DTS enabled
+        movlw   1<<EPHSHK|1<<EPINEN
+        movwf   UEP1, A         ; enable input, handshake
+
+        banksel BD2OBC
+        movlw   8               ; size of the packet
+        movwf   BD2OBC, B
+        movlw   LOW(USBDATA+24)
+        movwf   BD2OAL, B       ; buffer for EP2 (LSB)
+        movlw   HIGH(USBDATA+24)
+        movwf   BD2OAH, B       ; buffer for EP2 (MSB)
+        movlw   1<<UOWN|1<<DTSEN
+        movwf   BD2OST, B       ; buffer owned by the firmware, data toggle enable
+        movlw   1<<EPHSHK|1<<EPOUTEN
+        movwf   UEP2, A         ; enable output, handshake
 
         ;; save the configuration number in devconf
         movf    bufdata+2, W, B ; wValue
@@ -581,7 +619,17 @@ class_requests:
         movlw   'C'
         call    usart_send
 #endif
-        bra     error_stall  ; error condition
+        movf    bufdata+1, W, B
+        addlw   -0x0a           ; SET_IDLE
+        bz      set_idle
+        bra     standard_requests_err
+set_idle:
+class_requests_ack:
+        banksel BD0IBC
+        clrf    BD0IBC, B
+        movlw   1<<UOWN|1<<DTS|1<<DTSEN
+        movwf   BD0IST, B       ; UOWN, DATA1
+        return
 
         ;; process the vendor requests
 vendor_requests:
@@ -612,15 +660,28 @@ usb_in_token:
         bz      usb_in_ep1
         addlw   -(1<<3)
         bz      usb_in_ep2
+        bra     standard_requests_err
 usb_in_ep1:
-usb_in_ep2:
+        ;; IN
+        movlw   '<'
+        call    usart_send
+        banksel BD1IST
+        movlw   8
+        movwf   BD1IBC, B
+        movlw   1<<DTS
+        xorwf   BD1IST, W, B    ; toggle DATA bit
+        andlw   1<<DTS          ; filter it
+        iorlw   1<<UOWN|1<<DTSEN
+        movwf   BD1IST, B       ; UOWN, DATA1
         return
+usb_in_ep2:
+        bra     standard_requests_err
 
 usb_in_ep0:
         movf    devreq, W, B
-        xorlw   0x05
+        addlw   -5              ; 5 = set_address
         bz      usb_in_ep0_setaddress
-        xorlw   0x06^0x05
+        addlw   -1              ; 6 = get_descriptor
         bz      usb_in_ep0_getdescriptor
         return
 usb_in_ep0_setaddress:
@@ -640,12 +701,21 @@ usb_out_token:
         movf    custat, W, B
         andlw   0x18
         bz      usb_out_ep0
-        addlw   -1<<3
+        addlw   -(1<<3)
         bz      usb_out_ep1
-        addlw   -1<<3
+        addlw   -(1<<3)
         bz      usb_out_ep2
 usb_out_ep1:
+        bra     standard_requests_err
 usb_out_ep2:
+        movlw   '>'
+        call    usart_send
+        banksel BD2OST
+        movlw   1<<DTS
+        xorwf   BD2OST, W, B    ; toggle DATA bit
+        andlw   1<<DTS          ; filter it
+        iorlw   1<<UOWN|1<<DTSEN
+        movwf   BD2OST, B
         return
 
 usb_out_ep0:
@@ -865,6 +935,10 @@ check_request_table:
         bra     check_allow_configured ; SYNCH_FRAME      (12)
 
 .usbtables      CODE_PACK
+
+#define RAWHID_USAGE_PAGE       0xFFAB
+#define RAWHID_USAGE            0x0200
+
 DescriptorBegin:
 Device:
         db      0x12            ; bLength
@@ -881,25 +955,69 @@ Device:
         db      0x01            ; bNumConfigurations
 
 Configuration1:
-        db      0x09            ; bLength
-        db      0x02            ; bDescriptorType = 2 (Configuration)
-        db      0x12, 0x00      ; wTotalLength (LSB, MSB)
-        db      0x01            ; bNumInterfaces
-        db      0x01            ; bConfigurationValue
-        db      0x00            ; iConfiguration (not specified)
-        db      0xE0            ; bmAttributes = selfPowered | remoteWakeup
-        db      0x32            ; bMaxPower = 50 * 2mA = 100mA
+        db      9               ; bLength
+        db      2               ; bDescriptorType = 2 (Configuration)
+        db      LOW(Configuration1End-Configuration1)  ; wTotalLength (LSB)
+        db      HIGH(Configuration1End-Configuration1) ; wTotalLength (MSB)
+        db      1               ; bNumInterfaces
+        db      1               ; bConfigurationValue
+        db      0               ; iConfiguration (not specified)
+        db      0xC0            ; bmAttributes = selfPowered
+        db      50              ; bMaxPower = 50 * 2mA = 100mA
 
 Interface1:
-        db      0x09            ; bLength
-        db      0x04            ; bDescriptorType = 4 (Interface)
-        db      0x00            ; bInterfaceNumber
-        db      0x00            ; bAlternateSetting (0 = default)
-        db      0x00            ; bNumEndpoints (0 additional endpoints)
-        db      0xFF            ; bInterfaceClass (0xFF = vendor specified)
-        db      0x00            ; bInterfaceSubClass
-        db      0xFF            ; bInterfaceProtocol (0xFF = vendor specified)
-        db      0x00            ; iInterface (0x00 = no string)
+        db      9               ; bLength
+        db      4               ; bDescriptorType (Interface == 4)
+        db      0               ; bInterfaceNumber (interface == 0)
+        db      0               ; bAlternateSetting (default == 0)
+        db      2               ; bNumEndpoints (0 additional endpoints)
+        db      0x03            ; bInterfaceClass (0x03 == HID)
+        db      0x00            ; bInterfaceSubClass (0 == None, 1 = Boot)
+        db      0x00            ; bInterfaceProtocol (0 == None, 1 = Keyboard, 2 = Mouse)
+        db      0               ; iInterface (0x00 = no string)
+
+HIDInterface:
+        db      9               ; bLength
+        db      0x21            ; bDescriptorType (HID == 0x21)
+        db      0x11, 0x01      ; bcdHID spec (1.11)
+        db      0               ; bCountryCode
+        db      1               ; bNumDescriptors
+        db      0x22            ; bDescriptorType (REPORT == 0x22)
+        db      LOW(HIDReportEnd-HIDReport)  ; wDescriptorLength (LSB)
+        db      HIGH(HIDReportEnd-HIDReport) ; wDescriptorLength (MSB)
+
+EPDesc1:
+        db      7               ; bLength
+        db      5               ; bDescriptorType (endpoint == 5)
+        db      0x81            ; bEndpointAddress (0x80 == IN, EP1)
+        db      0x03            ; bmAttributes (0x03 = interrupt)
+        db      0x08, 0x00      ; wMaxPacketSize (LSB, MSB; 8 bytes)
+        db      100             ; bInterval
+
+EPDesc2:
+        db      7               ; bLength
+        db      5               ; bDescriptorType (endpoint == 5)
+        db      0x02            ; bEndpointAddress (OUT, EP2)
+        db      0x03            ; bmAttributes (0x03 = interrupt)
+        db      0x08, 0x00      ; wMaxPacketSize (8 bytes)
+        db      100             ; bInterval
+Configuration1End:
+
+HIDReport:
+        db      0x06, LOW(RAWHID_USAGE_PAGE), HIGH(RAWHID_USAGE_PAGE) ; Usage Page 0xFF00..0xFFFF
+        db      0x0A, LOW(RAWHID_USAGE), HIGH(RAWHID_USAGE)           ; Usage      0x0100..0xFFFF
+        db      0xA1, 0x01       ; COLLECTION 1 APPLICATION
+        db      0x75, 0x08       ; report size = 8 bits
+        db      0x15, 0x00       ; logical minimum = 0
+        db      0x26, 0xFF, 0x00 ; logical maximum = 255
+        db      0x95, 8          ; report count
+        db      0x09, 0x01       ; usage
+        db      0x81, 0x02       ; input (array)
+        db      0x95, 8          ; report count
+        db      0x09, 0x02       ; usage
+        db      0x91, 0x02       ; output (array)
+        db      0xC0             ; END COLLECTION
+HIDReportEnd:
 
 String0:
         db      String1-String0 ; bLength
