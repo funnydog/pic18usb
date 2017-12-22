@@ -14,7 +14,6 @@ ADDRESS_STATE   equ     1       ; the device is addressed
 CONFIG_STATE    equ     2       ; the device is configured
 
 ;; constants
-MAX_INTERFACES  equ     1       ; number of interfaces
 MAX_ENDPOINT    equ     2       ; number of endpoints (beyond EP0)
 
 .usbd1  udata
@@ -480,12 +479,10 @@ get_interface:
         btfsc   STATUS, C, A
         bra     ep0_stall_error
 
-        movlw   MAX_INTERFACES
-        subwf   bufdata+4, W, B ; wIndex
-        btfss   STATUS, C, A
+        movf    bufdata+4, W, B ; wIndex (interface number)
+        bz      get_interface_0
         bra     ep0_stall_error
-
-        ;; send the reply packet
+get_interface_0:
         banksel BD0IAH
         movf    BD0IAH, W, B
         movwf   FSR0H, A
@@ -500,10 +497,10 @@ set_interface:
         btfsc   STATUS, C, A
         bra     ep0_stall_error
 
-        movlw   MAX_INTERFACES
-        subwf   bufdata+4, W, B ; wIndex
-        btfss   STATUS, C, A
+        movf    bufdata+4, W, B ; wIndex (interface number)
+        bz      set_interface_0
         bra     ep0_stall_error
+set_interface_0:
         bra     ep0_send_ack
 
 get_status:
