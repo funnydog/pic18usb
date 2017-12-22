@@ -920,7 +920,7 @@ DescriptorBegin:
 Device:
         db      0x12            ; bLength
         db      0x01            ; bDescriptorType = 1 (Device)
-        db      0x10, 0x01      ; bcdUSB = USB 2.0
+        db      0x10, 0x01      ; bcdUSB = USB 1.10
         db      0x00, 0x00, 0x00 ; USB-IF class, subclass, protocol
         db      MAXPACKETSIZE0  ; maxPacketSize0 for ENDP0
         db      0xD8, 0x04      ; idVendor
@@ -939,8 +939,8 @@ Configuration1:
         db      1               ; bNumInterfaces
         db      1               ; bConfigurationValue
         db      0               ; iConfiguration (not specified)
-        db      0xC0            ; bmAttributes = selfPowered
-        db      50              ; bMaxPower = 50 * 2mA = 100mA
+        db      0xC0            ; bmAttributes (selfPowered)
+        db      50              ; bMaxPower (50 * 2mA = 100mA)
 
 Interface1:
         db      9               ; bLength
