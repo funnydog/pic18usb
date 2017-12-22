@@ -556,7 +556,8 @@ get_status_interface:
 get_status_endpoint:
         call    check_ep_direction
         bc      get_status_error
-        call    load_ep_bdt
+        movf    bufdata+4, W, B
+        call    lookup_bdt
         movf    INDF1, W, A
         andlw   0x04
         movwf   INDF0, A
@@ -596,7 +597,8 @@ xx_feature_ep:
         bz      xx_feature_send ; don't stall EP0
         call    check_ep_direction
         bc      xx_feature_err
-        call    load_ep_bdt     ; load BDT into FSR1
+        movf    bufdata+4, W, B
+        call    lookup_bdt      ; load BDT into FSR1
         btfss   bufdata+4, 7, B
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
@@ -783,19 +785,18 @@ check_ep_direction_err:
         return
 
         ;; load BDT into FSR1
-load_ep_bdt:
-        movlw   HIGH(BD0OST)
-        movwf   FSR1H, A
-        movf    bufdata+4, W, B ; wIndex (endpoint)
-        andlw   0x8F            ; filter out D7 and D3..D0
+        ;; W = Descriptor number (| 0x80 == IN)
+lookup_bdt:
+        andlw   0x8F            ; D7 00 00 00 D3 D2 D1 D0
         movwf   FSR1L, A
-        rlncf   FSR1L, F, A     ; 0 0 0 D3 D2 D1 D0 D7
-        rlncf   FSR1L, F, A     ; 0 0 D3 D2 D1 D0 D7 0
-        rlncf   FSR1L, F, A     ; 0 D2 D2 D1 D0 D7 0 0
+        rlncf   FSR1L, F, A     ; 00 00 00 D3 D2 D1 D0 D7
+        rlncf   FSR1L, F, A     ; 00 00 D3 D2 D1 D0 D7 00
+        rlncf   FSR1L, F, A     ; 00 D2 D2 D1 D0 D7 00 00
+        clrf    FSR1H, A
         movlw   LOW(BD0OST)
-        addwf   FSR1L, F, A     ; add the low address of BDT
-        btfsc   STATUS, C, A
-        incf    FSR1H, F, A     ; FSR1 points to BDn[OI]ST
+        addwf   FSR1L, F, A     ; add LSB of BD0OST address
+        movlw   HIGH(BD0OST)
+        addwfc  FSR1H, F, A     ; set to MSB of BD0OST address
         return
 
         ;; send the data when
