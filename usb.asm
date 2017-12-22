@@ -631,7 +631,7 @@ usb_in_token:
         bz      usb_in_ep1
         addlw   -(1<<3)
         bz      usb_in_ep2
-        bra     ep0_stall_error
+        return
 usb_in_ep1:
         ;; IN
         movlw   '<'
@@ -646,7 +646,7 @@ usb_in_ep1:
         movwf   BD1IST, B       ; UOWN, DATA1
         return
 usb_in_ep2:
-        bra     ep0_stall_error
+        return                  ; ep2 is an OUT endpoint
 
 usb_in_ep0:
         movf    devreq, W, B
@@ -676,8 +676,9 @@ usb_out_token:
         bz      usb_out_ep1
         addlw   -(1<<3)
         bz      usb_out_ep2
+        return
 usb_out_ep1:
-        bra     ep0_stall_error
+        return                  ; ep1 is an IN endpoint
 usb_out_ep2:
         movlw   '>'
         call    usart_send
