@@ -662,6 +662,12 @@ class_requests:
         bz      set_idle
         bra     ep0_stall_error
 set_idle:
+#ifdef USARTDEBUG
+        lfsr    FSR0, bufdata+2
+        call    usart_send_h8
+        movf    PLUSW0, W, A
+        call    usart_send_h8
+#endif
 class_requests_ack:
         bra     ep0_send_ack
 
