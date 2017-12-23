@@ -720,7 +720,9 @@ usb_out_ep2:
         movlw   '>'
         call    usart_send
 #endif
-        banksel BD2OST
+        banksel BD2OBC
+        movlw   8
+        movwf   BD2OBC, B
         movf    BD2OST, W, B
         xorlw   1<<DTS          ; toggle DATA bit
         andlw   1<<DTS          ; filter it
