@@ -216,6 +216,30 @@ ep_disable_3_15:
         clrf    UEP15, A
         return
 
+        ;; ep_bdt_lookup
+        ;;
+        ;; load into FSR1 the address of the buffer descriptor
+        ;; of the endpoint in the request.
+        ;;
+        ;; W = D7 00 00 00 D3 D2 D1 D0
+        ;;      |           |  |  |  |
+        ;;      |           +--+--+--+--- endpoint
+        ;;      +------------------------ direction
+        ;;
+        ;; Return: FSR1 points to BDT
+ep_bdt_lookup:
+        andlw   0x8F            ; D7 00 00 00 D3 D2 D1 D0
+        movwf   FSR1L, A
+        rlncf   FSR1L, F, A     ; 00 00 00 D3 D2 D1 D0 D7
+        rlncf   FSR1L, F, A     ; 00 00 D3 D2 D1 D0 D7 00
+        rlncf   FSR1L, F, A     ; 00 D2 D2 D1 D0 D7 00 00
+        clrf    FSR1H, A
+        movlw   LOW(BD0OST)
+        addwf   FSR1L, F, A     ; add LSB of BD0OST address
+        movlw   HIGH(BD0OST)
+        addwfc  FSR1H, F, A     ; set to MSB of BD0OST address
+        return
+
         ;; ep_dir_valid
         ;;
         ;; check if the direction of the endpoint in the request
@@ -574,7 +598,7 @@ get_status_endpoint:
         call    ep_dir_valid
         bc      get_status_err
         movf    bufdata+4, W, B ; wIndex (endpoint number | 0x80)
-        call    lookup_bdt
+        call    ep_bdt_lookup
         movf    INDF1, W, A     ; check the stall bit
         andlw   1<<BSTALL
         movwf   INDF0, A        ; 00 00 00 00 00 D2 00 00
@@ -616,7 +640,7 @@ xx_feature_ep:
         call    ep_dir_valid
         bc      xx_feature_err
         movf    bufdata+4, W, B
-        call    lookup_bdt      ; load BDT into FSR1
+        call    ep_bdt_lookup   ; load BDT into FSR1
         btfss   bufdata+4, 7, B
         movf    bufdata+1, W, B ; wValue (request type)
         sublw   1
@@ -778,21 +802,6 @@ check_request_ok:
         subwf   uswstat, W, B
 check_request_toggle:
         btg     STATUS, C, A    ; C = (C==1)?0:1
-        return
-
-        ;; load BDT into FSR1
-        ;; W = Descriptor number (| 0x80 == IN)
-lookup_bdt:
-        andlw   0x8F            ; D7 00 00 00 D3 D2 D1 D0
-        movwf   FSR1L, A
-        rlncf   FSR1L, F, A     ; 00 00 00 D3 D2 D1 D0 D7
-        rlncf   FSR1L, F, A     ; 00 00 D3 D2 D1 D0 D7 00
-        rlncf   FSR1L, F, A     ; 00 D2 D2 D1 D0 D7 00 00
-        clrf    FSR1H, A
-        movlw   LOW(BD0OST)
-        addwf   FSR1L, F, A     ; add LSB of BD0OST address
-        movlw   HIGH(BD0OST)
-        addwfc  FSR1H, F, A     ; set to MSB of BD0OST address
         return
 
         ;; send the data when
