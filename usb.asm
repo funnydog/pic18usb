@@ -216,6 +216,32 @@ ep_disable_3_15:
         clrf    UEP15, A
         return
 
+        ;; ep_dir_valid
+        ;;
+        ;; check if the direction of the endpoint in the request
+        ;; matches the one programmed in the registers.
+        ;;
+        ;; W = D7 00 00 00 D3 D2 D1 D0
+        ;;      |           |  |  |  |
+        ;;      |           +--+--+--+--- endpoint
+        ;;      +------------------------ direction
+        ;;
+        ;; Return: Carry flag set in case of mismatches
+ep_dir_valid:
+        lfsr    FSR1, UEP0      ; assume UEPn is in range 0x6A..0x79
+        andlw   0x8F            ; filter out the unneded bits
+        addwf   FSR1L, A
+        bcf     FSR1L, 7, A     ; FSR1 points to UEPn
+        andlw   0x80            ; D7 00 00 00 00 00 00 00
+        movlw   1<<EPOUTEN
+        btfsc   STATUS, Z, A
+        movlw   1<<EPINEN
+        andwf   INDF1, W, A     ; filter out the direction of the UEPn
+        bcf     STATUS, C, A
+        btfsc   STATUS, Z, A    ; Z means error
+        bsf     STATUS, C, A
+        return
+
         ;; send ack packet on successful transaction
 ep0_send_ack:
         movlw   0
@@ -544,9 +570,10 @@ get_status_interface:
         clrf    POSTINC0, A      ; byte[0] = 0
         bra     get_status_send
 get_status_endpoint:
-        call    check_ep_direction
-        bc      get_status_err
         movf    bufdata+4, W, B
+        call    ep_dir_valid
+        bc      get_status_err
+        movf    bufdata+4, W, B ; wIndex (endpoint number | 0x80)
         call    lookup_bdt
         movf    INDF1, W, A     ; check the stall bit
         andlw   1<<BSTALL
@@ -585,7 +612,8 @@ xx_feature_ep:
         movf    bufdata+4, W, B
         andlw   0x7F
         bz      xx_feature_send ; don't stall EP0
-        call    check_ep_direction
+        movf    bufdata+4, W, B
+        call    ep_dir_valid
         bc      xx_feature_err
         movf    bufdata+4, W, B
         call    lookup_bdt      ; load BDT into FSR1
@@ -748,26 +776,6 @@ check_request_ok:
         subwf   uswstat, W, B
 check_request_toggle:
         btg     STATUS, C, A    ; C = (C==1)?0:1
-        return
-
-        ;; check the direction of the endpoint request
-        ;; (uses FSR1)
-        ;; set the Carry flag in case of mismatches
-check_ep_direction:
-        banksel bufdata+4
-        movf    bufdata+4, W, B ; D7 00 00 00 D4 D3 D2 D1
-        andlw   0x0F
-        lfsr    FSR1, UEP0
-        addwf   FSR1L, A
-        btfsc   STATUS, C, A
-        incf    FSR1H, F, A     ; FSR1 = UEPn
-        movlw   1<<EPOUTEN
-        btfsc   bufdata+4, 7, B
-        movlw   1<<EPINEN
-        andwf   INDF1, W, A     ; filter out the direction of the UEPn
-        bcf     STATUS, C, A
-        btfsc   STATUS, Z, A    ; Z means error
-        bsf     STATUS, C, A
         return
 
         ;; load BDT into FSR1
