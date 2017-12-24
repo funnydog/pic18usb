@@ -266,10 +266,14 @@ ep_dir_valid:
         bsf     STATUS, C, A
         return
 
-        ;; send ack packet on successful transaction
+        ;; ep0_send_ack
+        ;;
+        ;; send an empty acknowledge packet
 ep0_send_ack:
         movlw   0
-        ;; send data packet made of W bytes
+        ;; ep0_send_data
+        ;;
+        ;; send W bytes of data
 ep0_send_data:
         banksel BD0IBC
         movwf   BD0IBC, B
@@ -277,8 +281,9 @@ ep0_send_data:
         movwf   BD0IST, B       ; UOWN, DATA1
         return
 
-        ;; stall input and output of EP0
-        ;; whenever we encounter an error
+        ;; ep0_stall_error
+        ;;
+        ;; stall ep0 input and output
 ep0_stall_error:
 #ifdef USARTDEBUG
         movlw   'E'
