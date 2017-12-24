@@ -899,7 +899,7 @@ lookup_descriptor:
         movlw   UPPER(DescriptorBegin)
         addwfc  TBLPTRU, F, A
         tblrd   *
-        movf    TABLAT, W
+        movf    TABLAT, W, A
         return
 
 .usbjumptables  code    0x300
