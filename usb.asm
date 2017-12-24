@@ -940,9 +940,6 @@ check_request_table:
 
 .usbtables      CODE_PACK
 
-#define RAWHID_USAGE_PAGE       0xFFAB
-#define RAWHID_USAGE            0x0200
-
 DescriptorBegin:
 Device:
         db      0x12            ; bLength
@@ -1008,19 +1005,19 @@ EPDesc2:
 Configuration1End:
 
 HIDReport:
-        db      0x06, LOW(RAWHID_USAGE_PAGE), HIGH(RAWHID_USAGE_PAGE) ; Usage Page 0xFF00..0xFFFF
-        db      0x0A, LOW(RAWHID_USAGE), HIGH(RAWHID_USAGE)           ; Usage      0x0100..0xFFFF
-        db      0xA1, 0x01       ; COLLECTION 1 APPLICATION
-        db      0x75, 0x08       ; report size = 8 bits
-        db      0x15, 0x00       ; logical minimum = 0
-        db      0x26, 0xFF, 0x00 ; logical maximum = 255
-        db      0x95, 8          ; report count
-        db      0x09, 0x01       ; usage
-        db      0x81, 0x02       ; input (array)
-        db      0x95, 8          ; report count
-        db      0x09, 0x02       ; usage
-        db      0x91, 0x02       ; output (array)
-        db      0xC0             ; END COLLECTION
+        db      0x06, 0xAB, 0xFF ; Usage Page 0xFFAB (0xFF00..0xFFFF)
+        db      0x0A, 0x00, 0x02 ; Usage      0x0200 (0x0100..0xFFFF)
+        db      0xA1, 0x01       ; 1 - 1010 00nn - COLLECTION      = 0x01 appl.
+        db      0x75, 0x08       ; 1 - 0111 01nn - REPORT SIZE     = 8 bits
+        db      0x15, 0x00       ; 1 - 0001 01nn - LOGICAL MINIMUM = 0
+        db      0x25, 0xFF       ; 1 - 0010 01nn - LOGICAL MAXIMUM = 255
+        db      0x95, 8          ; 1 - 1001 01nn - REPORT COUNT    = 8 fields
+        db      0x09, 0x01       ; 1 - 0000 10nn - USAGE           = 1
+        db      0x81, 0x02       ; 1 - 1000 00nn - INPUT           = 0x02 array
+        db      0x95, 8          ; 1 - 1001 01nn - REPORT COUNT    = 8 fields
+        db      0x09, 0x02       ; 1 - 0000 10nn - USAGE           = 2
+        db      0x91, 0x02       ; 1 - 1001 00nn - OUTPUT          = 0x02 array
+        db      0xC0             ; 0 - 1100 00nn - END COLLECTION
 HIDReportEnd:
 
 String0:
