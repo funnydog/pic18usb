@@ -31,16 +31,23 @@ int main(int argc, char *argv[])
 
 	uint8_t buf[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-	if (hid_write(handle, buf, 9) != 9) {
-		fprintf(stderr, "hid_write() failure\n");
-	}
-
-	if (hid_read(handle, buf, 8) != 8) {
-		fprintf(stderr, "hid_read() failure\n");
-	} else {
-		for (int i = 0; i < 8; i++) {
-			printf("buf[%d]: 0x%02X\n", i, buf[i]);
+	for (int i = 0; i < 10; i++) {
+		printf("Loop %d: ", i);
+		if (hid_write(handle, buf, 9) != 9) {
+			printf("WRITE FAILURE ");
+		} else {
+			printf("WRITE SUCCESS ");
 		}
+
+		if (hid_read(handle, buf, 8) != 8) {
+			printf("READ FAILURE\n");
+		} else {
+			printf("READ SUCCESS");
+			for (int j=0; j<8; j++)
+				printf(" %02X", buf[j]);
+			printf("\n");
+		}
+		sleep(1);
 	}
 
 	hid_close(handle);
