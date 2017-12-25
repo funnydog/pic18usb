@@ -26,6 +26,11 @@ digits  res     5               ; digits for BCD conversion
 .usartc code
 
 usart_isr:
+        ;; backup FSR0
+        movff   FSR0L, fsrbk+0
+        movff   FSR0H, fsrbk+1
+
+        ;; rx interrupt service routine
         btfss   PIR1, RCIF, A
         bra     usart_isr_rx_end
         btfss   RCSTA, OERR, A  ; overrun
@@ -42,79 +47,111 @@ usart_isr_ferr_end:
         movf    rcvr, W, A
         addlw   BUFSIZE
         subwf   rcvw, W, A
-        bnz     usart_isr_full_end ; queue full, character lost
+        bnz     usart_isr_full_end
         movf    RCREG, W, A
         bra     usart_isr_rx_end
 usart_isr_full_end:
-        movff   FSR0L, fsrbk+0  ; backup FSR0
-        movff   FSR0H, fsrbk+1
+        ;; wait until a byte is available on the usart
         lfsr    FSR0, rcvbuf
         movf    rcvw, W, A
         andlw   BUFMASK
         movff   RCREG, PLUSW0   ; save the data
         incf    rcvw, F, A      ; publish
-        movff   fsrbk+0, FSR0L  ; restore FSR0
-        movff   fsrbk+1, FSR0H
+
+        ;; since one byte is probably already on the wire
+        ;; assert RTS when the size of the queue is 1 byte
+        ;; less of BUFSIZE
+        decf    rcvr, W, A
+        addlw   BUFSIZE
+        subwf   rcvw, W, A
+        btfsc   STATUS, Z, A
+        bsf     LATC, 2, A
 usart_isr_rx_end:
 
+        ;; tx interrupt service routine
         btfss   PIR1, TXIF, A
         bra     usart_isr_tx_end
         movf    xmtr, W, A
         subwf   xmtw, W, A
-        bz      usart_isr_tx_err ; queue empty
-        movff   FSR0L, fsrbk+0   ; backup FSR0
-        movff   FSR0H, fsrbk+1
+        bnz     usart_isr_tx_send
+
+        ;; the queue is empty, disable tx interrupts
+        bcf     PIE1, TXIE, A
+        bra     usart_isr_tx_end
+
+usart_isr_tx_send:
         lfsr    FSR0, xmtbuf
         movf    xmtr, W, A
         andlw   BUFMASK
         movf    PLUSW0, W, A
         movwf   TXREG, A        ; get the data
         incf    xmtr, F, A      ; consume
-        movff   fsrbk+0, FSR0L  ; restore FSR0
-        movff   fsrbk+1, FSR0H
-        bra     usart_isr_tx_end
-usart_isr_tx_err:
-        bcf     PIE1, TXIE, A   ; disable TX interrupts
 usart_isr_tx_end:
+
+        ;; restore FSR0
+        movff   fsrbk+0, FSR0L
+        movff   fsrbk+1, FSR0H
         return
 
         ;; initialize the usart module
 usart_init:
-        bsf     RCSTA, SPEN, A  ; enable the usart module
-        bsf     TRISC, 7, A     ; RX pin
-        bsf     TRISC, 6, A     ; TX pin
-        bcf     TXSTA, SYNC, A  ; asynchronous mode
+        ;; initialize the control variables
+        clrf    xmtr, A         ; clear the send queue read index
+        clrf    xmtw, A         ; clear the send queue write index
+        clrf    rcvr, A         ; clear the recv queue read index
+        clrf    rcvw, A         ; clear the recv queue write index
+
+        ;; baud rate setup
         bsf     TXSTA, BRGH, A  ; high speed mode
         bsf     BAUDCON, BRG16, A ; high precision BRG (16bit)
         movlw   LOW(FOSC/4/BAUD-1)
         movwf   SPBRG, A
         movlw   HIGH(FOSC/4/BAUD-1)
         movwf   SPBRGH, A
+
+        ;; hardware setup
+        bcf     LATC, 2, A      ; clear the RTS pin
+        bcf     TRISC, 2, A     ; RTS pin
+        bsf     TRISC, 7, A     ; RX pin
+        bsf     TRISC, 6, A     ; TX pin
+        bsf     RCSTA, SPEN, A  ; enable the usart module
+        bcf     TXSTA, SYNC, A  ; asynchronous mode
+
+        ;; interrupt setup
         bsf     PIE1, RCIE, A   ; enable RX interrupts
         bcf     PIE1, TXIE, A   ; disable TX interrupts
         bsf     TXSTA, TXEN, A  ; enable tx
         bsf     RCSTA, CREN, A  ; enable rx
-        clrf    xmtr, A         ; clear the send queue read index
-        clrf    xmtw, A         ; clear the send queue write index
-        clrf    rcvr, A         ; clear the recv queue read index
-        clrf    rcvw, A         ; clear the recv queue write index
         return
 
-        ;; recv a byte in W
-        ;; return if the queue is empty with C = 1
+        ;; usart_recv_nowait
+        ;;
+        ;; receive a byte from the usart into W
+        ;; if no byte is available assert the Carry Flag
+        ;;
+        ;; Return: W, Carry Flag
 usart_recv_nowait:
         movf    rcvr, W, A
         subwf   rcvw, W, A
-        bnz     usart_recv_go   ; queue is not empty
+        bnz     usart_dequeue   ; queue is not empty
+        bcf     LATC, 2, A      ; queue empty, clear RTS
         bsf     STATUS, C, A
         return
-        ;; recv a byte in W
-        ;; wait if the queue is empty
+
+        ;; usart_recv
+        ;;
+        ;; receive a byte from the usart into W
+        ;; if no byte is available
+        ;;
+        ;; Return: W
 usart_recv:
         movf    rcvr, W, A
         subwf   rcvw, W, A
-        bz      usart_recv      ; queue is empty, wait
-usart_recv_go:
+        bnz     usart_dequeue   ; queue is not empty
+        bcf     LATC, 2, A      ; queue empty, clear RTS
+        bra     usart_recv
+
+usart_dequeue:
         lfsr    FSR0, rcvbuf
         movf    rcvr, W, A
         andlw   BUFMASK
@@ -123,27 +160,38 @@ usart_recv_go:
         bcf     STATUS, C, A    ; C = 0
         return
 
-        ;; send the byte in W
-        ;; return if the queue is full with C=1
+        ;; usart_send_nowait
+        ;;
+        ;; send the byte in W in the usart
+        ;; if no space is available assert the Carry Flag
+        ;;
+        ;; Return: Carry Flag set = space not available
 usart_send_nowait:
         movwf   tmp, A
         movf    xmtr, W, A
         addlw   BUFSIZE
         subwf   xmtw, W, A
-        bnz     usart_send_go
+        bnz     usart_enqueue
         movf    tmp, W, A
         bsf     STATUS, C, A
         return
-        ;; send the byte in W
-        ;; wait if the queue is FULL
+
+        ;; usart_send
+        ;;
+        ;; send the byte in W in the usart
+        ;; if no space is available wait
+        ;;
+        ;; Return: none
 usart_send:
         movwf   tmp, A          ; store W in a temporary
 usart_send_retry:
         movf    xmtr, W, A
         addlw   BUFSIZE
         subwf   xmtw, W, A
-        bz      usart_send_retry ; queue full, wait
-usart_send_go:
+        bnz     usart_enqueue
+        bra     usart_send_retry ; queue full, wait
+
+usart_enqueue:
         lfsr    FSR0, xmtbuf
         movf    xmtw, W, A
         andlw   BUFMASK
