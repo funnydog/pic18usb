@@ -6,9 +6,11 @@
         global  usart_send_s16, usart_send_u16
         global  usart_send_nl
 
-BAUD    EQU     9600
+BAUD    EQU     115200
 BUFSIZE EQU     16
 BUFMASK EQU     15
+CTS     EQU     1               ; Clear to send PORTC
+RTS     EQU     2               ; Request to send PORTC
 
 .usartd0 udata_acs
 tmp     res     1               ; temporary value
@@ -16,9 +18,9 @@ xmtr    res     1               ; send queue read index
 xmtw    res     1               ; send queue write index
 rcvr    res     1               ; recv queue read index
 rcvw    res     1               ; recv queue write index
-fsrbk   res     2               ; fsr backup
 
 .usartd1 udata
+fsrbk   res     2               ; fsr backup
 xmtbuf  res     BUFSIZE         ; write buffer
 rcvbuf  res     BUFSIZE         ; read buffer
 digits  res     5               ; digits for BCD conversion
@@ -65,20 +67,28 @@ usart_isr_full_end:
         addlw   BUFSIZE
         subwf   rcvw, W, A
         btfsc   STATUS, Z, A
-        bsf     LATC, 2, A
+        bsf     LATC, RTS, A    ; assert RTS
 usart_isr_rx_end:
 
         ;; tx interrupt service routine
         btfss   PIR1, TXIF, A
         bra     usart_isr_tx_end
-        movf    xmtr, W, A
-        subwf   xmtw, W, A
-        bnz     usart_isr_tx_send
 
-        ;; the queue is empty, disable tx interrupts
+        ;; check if CTS is high
+        btfss   PORTC, CTS, A   ; shouldn't be inverted
+        bra     usart_isr_tx_queue
         bcf     PIE1, TXIE, A
         bra     usart_isr_tx_end
 
+        ;; check if the queue is empty
+usart_isr_tx_queue:
+        movf    xmtr, W, A
+        subwf   xmtw, W, A
+        bnz     usart_isr_tx_send
+        bcf     PIE1, TXIE, A
+        bra     usart_isr_tx_end
+
+        ;; send the byte
 usart_isr_tx_send:
         lfsr    FSR0, xmtbuf
         movf    xmtr, W, A
@@ -93,7 +103,11 @@ usart_isr_tx_end:
         movff   fsrbk+1, FSR0H
         return
 
+        ;; usart_init
+        ;;
         ;; initialize the usart module
+        ;;
+        ;; Return: none
 usart_init:
         ;; initialize the control variables
         clrf    xmtr, A         ; clear the send queue read index
@@ -110,8 +124,9 @@ usart_init:
         movwf   SPBRGH, A
 
         ;; hardware setup
-        bcf     LATC, 2, A      ; clear the RTS pin
-        bcf     TRISC, 2, A     ; RTS pin
+        bcf     LATC, RTS, A    ; clear the RTS pin
+        bcf     TRISC, RTS, A   ; RTS pin - output
+        bsf     TRISC, CTS, A   ; CTS pin - input
         bsf     TRISC, 7, A     ; RX pin
         bsf     TRISC, 6, A     ; TX pin
         bsf     RCSTA, SPEN, A  ; enable the usart module
@@ -134,7 +149,7 @@ usart_recv_nowait:
         movf    rcvr, W, A
         subwf   rcvw, W, A
         bnz     usart_dequeue   ; queue is not empty
-        bcf     LATC, 2, A      ; queue empty, clear RTS
+        bcf     LATC, RTS, A    ; queue empty, clear RTS
         bsf     STATUS, C, A
         return
 
@@ -148,7 +163,7 @@ usart_recv:
         movf    rcvr, W, A
         subwf   rcvw, W, A
         bnz     usart_dequeue   ; queue is not empty
-        bcf     LATC, 2, A      ; queue empty, clear RTS
+        bcf     LATC, RTS, A    ; queue empty, clear RTS
         bra     usart_recv
 
 usart_dequeue:
