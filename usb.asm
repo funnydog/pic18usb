@@ -501,8 +501,8 @@ set_configuration:
 
 unset_configuration:
         call    ep_disable_1_15 ; disable eps from 1 to 15
-        movlw   CONFIG_STATE
-        movwf   uswstat, B      ; uswstate = CONFIG_STATE
+        movlw   ADDRESS_STATE
+        movwf   uswstat, B      ; uswstate = ADDRESS_STATE
         clrf    devconf, B      ; deconf = 0
         bra     ep0_send_ack
 
@@ -538,8 +538,8 @@ set_configuration_1:
         movlw   1
         banksel devconf
         movwf   devconf, B      ; devconf = 1
-        movlw   ADDRESS_STATE
-        movwf   uswstat, B      ; uswtat = ADDRESS_STATE
+        movlw   CONFIG_STATE
+        movwf   uswstat, B      ; uswtat = CONFIG_STATE
         bra     ep0_send_ack
 
 get_interface:
