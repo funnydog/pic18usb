@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
         }
         /* set the verbosity level of libusb */
-        libusb_set_debug(ctx, 3);
+        libusb_set_option(ctx, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_INFO);
 
         libusb_device_handle *handle;
         handle = libusb_open_device_with_vid_pid(ctx, 0x04D8, 0x0001);
