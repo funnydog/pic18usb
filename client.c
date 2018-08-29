@@ -1,3 +1,11 @@
+/*
+ * raw access to the usb device
+ * To use this program you must unbind the usb device
+ * which will be claimed by hidraw.
+ *
+ * $ echo -n 4-1.5.2:1.0 | sudo tee /sys/bus/usb/drivers/usbhid/unbind
+ */
+
 #include <libusb.h>
 #include <stdio.h>
 #include <stdint.h>
