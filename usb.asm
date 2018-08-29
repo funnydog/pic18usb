@@ -2,7 +2,7 @@
         include "usbdef.inc"
         include "usart.inc"
 
-        global  usb_init, usb_service
+        global  usb_init, usb_service, usb_data_received
 
 ;; #define USARTDEBUG              ; defined if usart debugging is enabled
 
@@ -28,6 +28,7 @@ uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIG)
 
 dptr    res     1               ; descriptor offset
 bleft   res     1               ; descriptor length
+hidstat res     1               ; bit 0 - read complete, bit 1 - write complete
 
 .usbst  code
 
@@ -76,6 +77,9 @@ usb_init:
         movwf   USBDATA+22, B
         movlw   0xBE
         movwf   USBDATA+23, B
+
+        banksel hidstat
+        clrf    hidstat, B
         return
 
 ;;; called to service the USB conditions
@@ -707,6 +711,7 @@ usb_in_ep1:
         movlw   '<'
         call    usart_send
 #endif
+        bsf     hidstat, 0, B
         banksel BD1IBC
         movlw   8
         movwf   BD1IBC, B
@@ -755,6 +760,7 @@ usb_out_ep2:
         movlw   '>'
         call    usart_send
 #endif
+        bsf     hidstat, 1, B
         banksel BD2OBC
         movlw   8
         movwf   BD2OBC, B
@@ -905,6 +911,17 @@ lookup_descriptor:
         addwfc  TBLPTRU, F, A
         tblrd   *
         movf    TABLAT, W, A
+        return
+
+usb_data_received:
+        banksel hidstat
+        btfsc   hidstat, 1, B
+        bra     usb_data_received_0
+        bcf     STATUS, C, A
+        return
+usb_data_received_0:
+        bcf     hidstat, 1, B
+        bsf     STATUS, C, A
         return
 
 .usbjumptables  code    0x300
