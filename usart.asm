@@ -13,14 +13,15 @@ CTS     EQU     1               ; Clear to send PORTC
 RTS     EQU     2               ; Request to send PORTC
 
 .usartd0 udata_acs
-tmp     res     1               ; temporary value
+enqval  res     1               ; value to enqueue
 xmtr    res     1               ; send queue read index
 xmtw    res     1               ; send queue write index
 rcvr    res     1               ; recv queue read index
 rcvw    res     1               ; recv queue write index
 
 .usartd1 udata
-fsrbk   res     2               ; fsr backup
+fsrbk   res     2               ; fsr backup for ISR
+fsrbk2  res     2               ; fsr backup for enqueue
 xmtbuf  res     BUFSIZE         ; write buffer
 rcvbuf  res     BUFSIZE         ; read buffer
 digits  res     5               ; digits for BCD conversion
@@ -99,8 +100,8 @@ usart_isr_tx_send:
 usart_isr_tx_end:
 
         ;; restore FSR0
-        movff   fsrbk+0, FSR0L
         movff   fsrbk+1, FSR0H
+        movff   fsrbk+0, FSR0L
         return
 
         ;; usart_init
@@ -178,17 +179,31 @@ usart_dequeue:
         ;; usart_send_nowait
         ;;
         ;; send the byte in W in the usart
-        ;; if no space is available assert the Carry Flag
+        ;; if no space is available set the Carry Flag
         ;;
         ;; Return: Carry Flag set = space not available
 usart_send_nowait:
-        movwf   tmp, A
-        movf    xmtr, W, A
-        addlw   BUFSIZE
-        subwf   xmtw, W, A
-        bnz     usart_enqueue
-        movf    tmp, W, A
-        bsf     STATUS, C, A
+        movwf   enqval, A       ; store the accumulator
+        movf    xmtr, W, A      ;
+        addlw   BUFSIZE         ;
+        subwf   xmtw, W, A      ; if the queue is not full
+        bnz     usart_enqueue   ; enqueue it
+        movf    enqval, W, A    ;
+        bsf     STATUS, C, A    ; else set Carry flag
+        return
+
+usart_enqueue:
+        movff   FSR0L, fsrbk2+0 ;
+        movff   FSR0H, fsrbk2+1 ; backup FSR0
+        lfsr    FSR0, xmtbuf
+        movf    xmtw, W, A
+        andlw   BUFMASK
+        movff   enqval, PLUSW0  ; save data
+        incf    xmtw, F, A      ; publish
+        bsf     PIE1, TXIE, A   ; enable TX interrupts
+        bcf     STATUS, C, A    ; C = 0
+        movff   fsrbk2+1, FSR0H ;
+        movff   fsrbk2+0, FSR0L ; restore FSR0
         return
 
         ;; usart_send
@@ -198,22 +213,9 @@ usart_send_nowait:
         ;;
         ;; Return: none
 usart_send:
-        movwf   tmp, A          ; store W in a temporary
-usart_send_retry:
-        movf    xmtr, W, A
-        addlw   BUFSIZE
-        subwf   xmtw, W, A
-        bnz     usart_enqueue
-        bra     usart_send_retry ; queue full, wait
-
-usart_enqueue:
-        lfsr    FSR0, xmtbuf
-        movf    xmtw, W, A
-        andlw   BUFMASK
-        movff   tmp, PLUSW0     ; save data
-        incf    xmtw, F, A      ; publish
-        bsf     PIE1, TXIE, A   ; enable TX interrupts
-        bcf     STATUS, C, A    ; C = 0
+        call    usart_send_nowait
+        btfsc   STATUS, C, A
+        bra     usart_send
         return
 
         ;; send a string in TBLPTR
@@ -234,19 +236,16 @@ usart_send_nl:
 
         ;; print a 32bit hex value
 usart_send_h32:
-        movlw   4
-        bra     $+4
+        call    usart_send_h_digit
+        call    usart_send_h_digit
 usart_send_h16:
-        movlw   2
-        movwf   tmp, A
-usart_send_h_loop:
+        call    usart_send_h_digit
+usart_send_h_digit:
         swapf   INDF0, W, A
         rcall   usart_send_h4
         movf    POSTINC0, W, A
-        rcall   usart_send_h4
-        decfsz  tmp, F, A
-        bra     usart_send_h_loop
-        return
+        bra     usart_send_h4
+
         ;; print a 8bit hex value
 usart_send_h8:
         swapf   INDF0, W, A     ; most significant nibble
@@ -282,15 +281,21 @@ usart_send_sign:
 usart_send_u16:
         call    b16_d5
         lfsr    FSR0, digits
-        movlw   5
-        movwf   tmp, A
-usart_send_u_loop:
         movf    POSTINC0, W, A
         addlw   '0'
         rcall   usart_send
-        decfsz  tmp, F, A
-        bra     usart_send_u_loop
-        return
+        movf    POSTINC0, W, A
+        addlw   '0'
+        rcall   usart_send
+        movf    POSTINC0, W, A
+        addlw   '0'
+        rcall   usart_send
+        movf    POSTINC0, W, A
+        addlw   '0'
+        rcall   usart_send
+        movf    POSTINC0, W, A
+        addlw   '0'
+        bra     usart_send
 
         ;; b16_d5 - convert a 16bit value to BCD
         ;; @FSR0: address of the 16bit value [LSB, MSB]
