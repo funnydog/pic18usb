@@ -9,8 +9,8 @@
 BAUD    EQU     115200
 BUFSIZE EQU     16
 BUFMASK EQU     15
-CTS     EQU     1               ; Clear to send PORTC
-RTS     EQU     2               ; Request to send PORTC
+CTS     EQU     1               ; Clear to send PORTB (input)
+RTS     EQU     2               ; Request to send PORTB (output)
 
 .usartd0 udata_acs
 enqval  res     1               ; value to enqueue
@@ -68,7 +68,7 @@ usart_isr_full_end:
         addlw   BUFSIZE
         subwf   rcvw, W, A
         btfsc   STATUS, Z, A
-        bsf     LATC, RTS, A    ; assert RTS
+        bsf     LATB, RTS, A    ; assert RTS
 usart_isr_rx_end:
 
         ;; tx interrupt service routine
@@ -76,7 +76,7 @@ usart_isr_rx_end:
         bra     usart_isr_tx_end
 
         ;; check if CTS is high
-        btfss   PORTC, CTS, A   ; shouldn't be inverted
+        btfsc   PORTB, CTS, A   ; shouldn't be inverted
         bra     usart_isr_tx_queue
         bcf     PIE1, TXIE, A
         bra     usart_isr_tx_end
@@ -125,9 +125,9 @@ usart_init:
         movwf   SPBRGH, A
 
         ;; hardware setup
-        bcf     LATC, RTS, A    ; clear the RTS pin
-        bcf     TRISC, RTS, A   ; RTS pin - output
-        bsf     TRISC, CTS, A   ; CTS pin - input
+        bcf     LATB, RTS, A    ; clear the RTS pin
+        bcf     TRISB, RTS, A   ; RTS pin - output
+        bsf     TRISB, CTS, A   ; CTS pin - input
         bsf     TRISC, 7, A     ; RX pin
         bsf     TRISC, 6, A     ; TX pin
         bsf     RCSTA, SPEN, A  ; enable the usart module
@@ -150,7 +150,7 @@ usart_recv_nowait:
         movf    rcvr, W, A
         subwf   rcvw, W, A
         bnz     usart_dequeue   ; queue is not empty
-        bcf     LATC, RTS, A    ; queue empty, clear RTS
+        bcf     LATB, RTS, A    ; queue empty, clear RTS
         bsf     STATUS, C, A
         return
 
@@ -164,7 +164,7 @@ usart_recv:
         movf    rcvr, W, A
         subwf   rcvw, W, A
         bnz     usart_dequeue   ; queue is not empty
-        bcf     LATC, RTS, A    ; queue empty, clear RTS
+        bcf     LATB, RTS, A    ; queue empty, clear RTS
         bra     usart_recv
 
 usart_dequeue:
