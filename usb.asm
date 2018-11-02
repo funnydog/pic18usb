@@ -197,13 +197,13 @@ usb_service_reset_end:
         andlw   0x3C            ; 00 00 P3 P2 P1 P0 00 00
         addlw   -(1<<2)         ; 0b0001 - token out
         btfsc   STATUS, Z, A
-        bra     usb_out_token
+        goto    usb_out_token
         addlw   -(8<<2)         ; 0b1001 - token in
         btfsc   STATUS, Z, A
-        bra     usb_in_token
+        goto    usb_in_token
         addlw   -(4<<2)         ; 0b1101 - token setup
         btfsc   STATUS, Z, A
-        bra     usb_setup_token
+        goto    usb_setup_token
 usb_service_trn_end:
         return
 

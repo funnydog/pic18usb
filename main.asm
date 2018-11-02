@@ -59,7 +59,7 @@
 .reset  code    0x0000
         goto    main            ; reset vector (used goto for loader compatibility)
 .isr    code    0x0008
-        bra     isr             ; isr vector
+        goto    isr             ; isr vector
 
 .main  code
 isr:                            ; isr
