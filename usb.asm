@@ -286,11 +286,8 @@ ep_bdt_lookup:
         rlncf   FSR1L, F, A     ; 00 00 00 D3 D2 D1 D0 D7
         rlncf   FSR1L, F, A     ; 00 00 D3 D2 D1 D0 D7 00
         rlncf   FSR1L, F, A     ; 00 D2 D2 D1 D0 D7 00 00
-        clrf    FSR1H, A
-        movlw   LOW(BD0OST)
-        addwf   FSR1L, F, A     ; add LSB of BD0OST address
         movlw   HIGH(BD0OST)
-        addwfc  FSR1H, F, A     ; set to MSB of BD0OST address
+        movwf   FSR1H, A
         return
 
         ;; ep_dir_valid
