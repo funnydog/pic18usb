@@ -8,11 +8,6 @@
 
 MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 
-;;; states
-DEFAULT_STATE   equ     0       ; state after a USB reset
-ADDRESS_STATE   equ     1       ; the device is addressed
-CONFIG_STATE    equ     2       ; the device is configured
-
 .usbd1  udata
 
 cnt     res     1               ; counter variable
