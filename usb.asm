@@ -2,7 +2,7 @@
         include "usbdef.inc"
         include "usart.inc"
 
-        global  usb_init, usb_service
+        global  usb_init, usb_service, usb_set_epaddr, usb_get_epaddr
         extern  usb_rx_event, usb_tx_event, usb_status_event
 
 ;; #define USARTDEBUG              ; defined if usart debugging is enabled
@@ -22,12 +22,44 @@ devconf res     1               ; current configuration
 devstat res     1               ; device status (self powered, remote wakeup)
 
 penaddr res     1               ; pending addr to assign to the device
-uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIG)
+uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIGURED, SUSPENDED)
 
 dptr    res     1               ; descriptor offset
 bleft   res     1               ; descriptor length
 
 .usbst  code
+
+
+        ;; usb_set_epaddr() - set the address of the endpoint
+        ;; @W:    endpoint number (0x80 for input)
+        ;; @FSR0: address of the endpoint
+        ;;
+        ;; This functions mangles FSR1.
+        ;;
+        ;; Return: nothing
+usb_set_epaddr:
+        call    ep_bdt_lookup
+        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
+        movf    FSR0L, W, A
+        movwf   POSTINC1, A
+        movf    FSR0H, W, A
+        movwf   INDF1, A
+        return
+
+        ;; usb_get_epaddr() - get the address of the endpoint
+        ;; @W:    endpoint number (0x80 for input)
+        ;;
+        ;; This functions mangles FSR0 and FSR1.
+        ;;
+        ;; Return: address of the USB buffer in FSR0
+usb_get_epaddr:
+        call    ep_bdt_lookup
+        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
+        movf    POSTINC1, W, A
+        movwf   FSR0L, A
+        movf    INDF1, W, A
+        movwf   FSR0H, A
+        return
 
         ;; usb_change_state() - change the state of the device
         ;; @W: state of the device
@@ -68,6 +100,21 @@ usb_init:
         btfsc   UCON, SE0, A    ; wait until SE0 == 0
         bra     $-2
 
+        ;; set up the endpoint buffer descriptors
+        movlw   0x00            ; EP0 - Output
+        lfsr    FSR0, USBDATA
+        call    usb_set_epaddr
+        movlw   0x80            ; EP0 - Input
+        lfsr    FSR0, USBDATA+MAXPACKETSIZE0
+        call    usb_set_epaddr
+        movlw   0x81            ; EP1 - Input
+        lfsr    FSR0, USBDATA+16
+        call    usb_set_epaddr
+        movlw   0x02            ; EP2 - Output
+        lfsr    FSR0, USBDATA+24
+        call    usb_set_epaddr
+
+        ;; control data for EP1
         banksel USBDATA+16
         movlw   0x01
         movwf   USBDATA+16, B
@@ -139,17 +186,8 @@ usb_service_actv_end:
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
         movwf   BD0OBC, B       ; maxPacketSize0
-        movlw   LOW(USBDATA)    ;
-        movwf   BD0OAL, B       ; OUT buffer address LSB
-        movlw   HIGH(USBDATA)   ;
-        movwf   BD0OAH, B       ; OUT buffer address MSB
         movlw   1<<UOWN|1<<DTSEN
         movwf   BD0OST, B       ; UOWN, DTS enabled
-
-        movlw   LOW(USBDATA + MAXPACKETSIZE0)
-        movwf   BD0IAL, B       ; IN buffer address LSB
-        movlw   HIGH(USBDATA + MAXPACKETSIZE0)
-        movwf   BD0IAH, B       ; IN buffer address MSB
         movlw   1<<DTSEN
         movwf   BD0IST, B       ; buffer owned by the firmware, data toggle enable
 
@@ -527,26 +565,20 @@ set_configuration_1:
         call    ep_disable_3_15 ; disable eps from 3 to 15
 
         ;; setup the endpoint 1 (IN, interrupt)
+        ;; BD1IA[LH] are set by usb_set_epaddr()
         banksel BD1IBC
         movlw   IREPORT_SIZE    ; size of the packet
         movwf   BD1IBC, B
-        movlw   LOW(USBDATA+16)
-        movwf   BD1IAL, B       ; buffer for EP1 (LSB)
-        movlw   HIGH(USBDATA+16)
-        movwf   BD1IAH, B       ; buffer for EP1 (MSB)
         movlw   1<<UOWN|1<<DTSEN
         movwf   BD1IST, B       ; UOWN, DTS enabled
         movlw   1<<EPHSHK|1<<EPINEN
         movwf   UEP1, A         ; enable input, handshake
 
         ;; setup the endpoint 2 (OUT, interrupt)
+        ;; BD2OA[LH] are set by usb_set_epaddr()
         banksel BD2OBC
         movlw   OREPORT_SIZE    ; size of the packet
         movwf   BD2OBC, B
-        movlw   LOW(USBDATA+24)
-        movwf   BD2OAL, B       ; buffer for EP2 (LSB)
-        movlw   HIGH(USBDATA+24)
-        movwf   BD2OAH, B       ; buffer for EP2 (MSB)
         movlw   1<<UOWN|1<<DTSEN
         movwf   BD2OST, B       ; buffer owned by the firmware, data toggle enable
         movlw   1<<EPHSHK|1<<EPOUTEN
