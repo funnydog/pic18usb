@@ -70,6 +70,11 @@ usb_change_state:
         movwf   uswstat, B
         goto    usb_status_event
 
+        ;; usb_init() - enable the USB module
+        ;;
+        ;; Enable the USB module and setup the data
+        ;;
+        ;; Return: nothing
 usb_init:
         ;; enable the Active Clock Tuning to USB clock
         movlw   1<<ACTSRC
@@ -135,7 +140,11 @@ usb_init:
 
         return
 
-;;; called to service the USB conditions
+        ;; usb_service() - service the USB engine flags
+        ;;
+        ;; Service the USB SIE flags
+        ;;
+        ;; Return: nothing
 usb_service:
         ;; received Start-Of-Frame
         btfsc   UIR, SOFIF, A
@@ -269,17 +278,18 @@ ep_disable_3_15:
         clrf    UEP15, A
         return
 
-        ;; ep_bdt_lookup
+        ;; ep_bdt_lookup() - load the BD addr into FSR1
+        ;; @W: EP number [ | 0x80 ] (see below)
         ;;
-        ;; load into FSR1 the address of the buffer descriptor
-        ;; of the endpoint in the request.
+        ;; Load the address of the BD for the EP in W
+        ;; into FSR1.
         ;;
         ;; W = D7 00 00 00 D3 D2 D1 D0
         ;;      |           |  |  |  |
         ;;      |           +--+--+--+--- endpoint
         ;;      +------------------------ direction
         ;;
-        ;; Return: FSR1 points to BDT
+        ;; Return: BD address into FSR1
 ep_bdt_lookup:
         andlw   0x8F            ; D7 00 00 00 D3 D2 D1 D0
         movwf   FSR1L, A
@@ -290,10 +300,13 @@ ep_bdt_lookup:
         movwf   FSR1H, A
         return
 
-        ;; ep_dir_valid
+        ;; ep_dir_valid() - check if the EP direction is correct
+        ;; @W: EP number [ | 0x80 ] (see below)
         ;;
-        ;; check if the direction of the endpoint in the request
-        ;; matches the one programmed in the registers.
+        ;; Check if the direction of the endpoint matches
+        ;; the one programmed in the registers.
+        ;;
+        ;; The function mangles FSR1.
         ;;
         ;; W = D7 00 00 00 D3 D2 D1 D0
         ;;      |           |  |  |  |
@@ -303,7 +316,7 @@ ep_bdt_lookup:
         ;; Return: Carry flag set in case of mismatches
 ep_dir_valid:
         lfsr    FSR1, UEP0      ; assume UEPn is in range 0x6A..0x79
-        andlw   0x8F            ; filter out the unneded bits
+        andlw   0x8F            ; D7 00 00 00 D3 D2 D1 D0
         addwf   FSR1L, A
         bcf     FSR1L, 7, A     ; FSR1 points to UEPn
         andlw   0x80            ; D7 00 00 00 00 00 00 00
