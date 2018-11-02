@@ -7,6 +7,8 @@
 ;; #define USARTDEBUG              ; defined if usart debugging is enabled
 
 MAXPACKETSIZE0  equ     8       ; max packet size for EP0
+IREPORT_SIZE    equ     8
+OREPORT_SIZE    equ     8
 
 .usbd1  udata
 
@@ -56,7 +58,7 @@ usb_init:
         bra     $-2
 
         banksel USBDATA+16
-        movlw   0xDE
+        movlw   0x01
         movwf   USBDATA+16, B
         movlw   0xAD
         movwf   USBDATA+17, B
@@ -510,7 +512,7 @@ set_configuration_1:
 
         ;; setup the endpoint 1 (IN, interrupt)
         banksel BD1IBC
-        movlw   8               ; size of the packet
+        movlw   IREPORT_SIZE    ; size of the packet
         movwf   BD1IBC, B
         movlw   LOW(USBDATA+16)
         movwf   BD1IAL, B       ; buffer for EP1 (LSB)
@@ -523,7 +525,7 @@ set_configuration_1:
 
         ;; setup the endpoint 2 (OUT, interrupt)
         banksel BD2OBC
-        movlw   8               ; size of the packet
+        movlw   OREPORT_SIZE    ; size of the packet
         movwf   BD2OBC, B
         movlw   LOW(USBDATA+24)
         movwf   BD2OAL, B       ; buffer for EP2 (LSB)
@@ -708,7 +710,7 @@ usb_in_ep1:
 #endif
         bsf     hidstat, 0, B
         banksel BD1IBC
-        movlw   8
+        movlw   IREPORT_SIZE
         movwf   BD1IBC, B
         movf    BD1IST, W, B
         xorlw   1<<DTS          ; toggle DATA bit
@@ -757,7 +759,7 @@ usb_out_ep2:
 #endif
         bsf     hidstat, 1, B
         banksel BD2OBC
-        movlw   8
+        movlw   OREPORT_SIZE
         movwf   BD2OBC, B
         movf    BD2OST, W, B
         xorlw   1<<DTS          ; toggle DATA bit
@@ -1017,19 +1019,24 @@ EPDesc2:
 Configuration1End:
 
 HIDReport:
-        db      0x06, 0xAB, 0xFF ; Usage Page 0xFFAB (0xFF00..0xFFFF)
-        db      0x0A, 0x00, 0x02 ; Usage      0x0200 (0x0100..0xFFFF)
-        db      0xA1, 0x01       ; 1 - 1010 00nn - COLLECTION      = 0x01 appl.
-        db      0x75, 0x08       ; 1 - 0111 01nn - REPORT SIZE     = 8 bits
-        db      0x15, 0x00       ; 1 - 0001 01nn - LOGICAL MINIMUM = 0
-        db      0x25, 0xFF       ; 1 - 0010 01nn - LOGICAL MAXIMUM = 255
-        db      0x95, 8          ; 1 - 1001 01nn - REPORT COUNT    = 8 fields
-        db      0x09, 0x01       ; 1 - 0000 10nn - USAGE           = 1
-        db      0x81, 0x02       ; 1 - 1000 00nn - INPUT           = 0x02 array
-        db      0x95, 8          ; 1 - 1001 01nn - REPORT COUNT    = 8 fields
-        db      0x09, 0x02       ; 1 - 0000 10nn - USAGE           = 2
-        db      0x91, 0x02       ; 1 - 1001 00nn - OUTPUT          = 0x02 array
-        db      0xC0             ; 0 - 1100 00nn - END COLLECTION
+        db      0x05, 0x01       ; USAGE PAGE (Generic Desktop)
+        db      0x09, 0x00       ; USAGE (Undefined)
+        db      0xA1, 0x01       ; COLLECTION (Application)
+        db      0x15, 0x00       ;   LOGICAL_MINIMUM (0)
+        db      0x26, 0x00, 0xFF ;   LOGICAL_MAXIMUM (255)
+
+        db      0x85, 0x01       ;   REPORT_ID (1)
+        db      0x75, 0x08       ;   REPORT_SIZE (8)
+        db      0x95, 0x07       ;   REPORT_COUNT (7) (IREPORT_SIZE-1)
+        db      0x09, 0x00       ;   USAGE (Undefined)
+        db      0x81, 0x82       ;   INPUT (Data, Var, Abs, Vol)
+
+        db      0x85, 0x02       ;   REPORT_ID (2)
+        db      0x75, 0x08       ;   REPORT_SIZE (8)
+        db      0x95, 0x07       ;   REPORT_COUNT (7) (OREPORT_SIZE-1)
+        db      0x09, 0x00       ;   USAGE (Undefined)
+        db      0x91, 0x82       ;   OUTPUT (Data, Var, Abs, Vol)
+        db      0xC0             ; END_COLLECTION
 HIDReportEnd:
 
 String0:
