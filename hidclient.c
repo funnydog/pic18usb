@@ -1,3 +1,5 @@
+#define _DEFAULT_SOURCE
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,25 +31,26 @@ int main(int argc, char *argv[])
 	if (hid_get_serial_number_string(handle, wstr, 256) == 0)
 		printf("Serial Number String: (%d) %ls\n", wstr[0], wstr);
 
-	uint8_t buf[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+	uint8_t rbuf[8] = {1, 0, 0, 0, 0, 0, 0, 0, };
+	uint8_t buf[8] = {2, 0, 1, 2, 3, 4, 5, 6 };
 
-	for (int i = 0; i < 10; i++) {
-		printf("Loop %d: ", i);
-		if (hid_write(handle, buf, 9) != 9) {
-			printf("WRITE FAILURE ");
-		} else {
-			printf("WRITE SUCCESS ");
-		}
-
-		if (hid_read(handle, buf, 8) != 8) {
+	for (int j = 0; j < 10; j++) {
+		printf("Outer loop %d\n", j);
+		if (hid_read(handle, rbuf, 8) != 8) {
 			printf("READ FAILURE\n");
 		} else {
-			printf("READ SUCCESS");
-			for (int j=0; j<8; j++)
-				printf(" %02X", buf[j]);
+			for (int i = 0; i < 8; i++)
+				printf("%02x", rbuf[i]);
 			printf("\n");
 		}
-		sleep(1);
+		for (int i = 0; i < 1024; i++) {
+			buf[1] = i;
+			printf("Inner loop %d\n", i);
+			if (hid_write(handle, buf, 8) != 8) {
+				printf("WRITE FAILURE\n");
+			}
+			sleep(1);
+		}
 	}
 
 	hid_close(handle);
