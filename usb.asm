@@ -2,7 +2,8 @@
         include "usbdef.inc"
         include "usart.inc"
 
-        global  usb_init, usb_service, usb_data_received
+        global  usb_init, usb_service
+        extern  usb_rx_event, usb_tx_event, usb_status_event
 
 ;; #define USARTDEBUG              ; defined if usart debugging is enabled
 
@@ -25,9 +26,17 @@ uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIG)
 
 dptr    res     1               ; descriptor offset
 bleft   res     1               ; descriptor length
-hidstat res     1               ; bit 0 - read complete, bit 1 - write complete
 
 .usbst  code
+
+        ;; usb_change_state() - change the state of the device
+        ;; @W: state of the device
+        ;;
+        ;; Return: nothing
+usb_change_state:
+        banksel uswstat
+        movwf   uswstat, B
+        goto    usb_status_event
 
 usb_init:
         ;; enable the Active Clock Tuning to USB clock
@@ -44,10 +53,12 @@ usb_init:
         movlw   1<<USBEN
         movwf   UCON, A         ; enable the USB module
 
-        banksel uswstat
         movlw   DEFAULT_STATE
-        movwf   uswstat, B      ; device status (DEFAULT, ADDRESS, CONFIG)
+        banksel uswstat
+        movwf   uswstat, B
+
         movlw   0xFF
+        banksel devreq
         movwf   devreq, B       ; current request = 0xFF (no request)
         clrf    penaddr, B      ; pending address
         clrf    devconf, B      ; current configuration
@@ -75,8 +86,6 @@ usb_init:
         movlw   0xBE
         movwf   USBDATA+23, B
 
-        banksel hidstat
-        clrf    hidstat, B
         return
 
 ;;; called to service the USB conditions
@@ -94,6 +103,8 @@ usb_service:
         bra     usb_service_idle_end
         bcf     UIR, IDLEIF, A
         bsf     UCON, SUSPND, A ; suspend the device
+        movlw   SUSPENDED_STATE
+        call    usb_status_event
 usb_service_idle_end:
 
         ;; Bus activity detected
@@ -102,6 +113,9 @@ usb_service_idle_end:
         btfsc   UCON, SUSPND, A
         bcf     UCON, SUSPND, A ; resume the device
         bcf     UIR, ACTVIF, A
+        banksel uswstat
+        movf    uswstat, W, B
+        call    usb_status_event
 usb_service_actv_end:
 
         ;; Unmasked error condition
@@ -146,9 +160,10 @@ usb_service_actv_end:
         movlw   0x9F
         movwf   UEIE, A         ; enable all the interrupts
 
-        banksel uswstat
         movlw   DEFAULT_STATE
-        movwf   uswstat, B      ; set the DEFAULT state
+        call    usb_change_state
+
+        banksel devconf
         clrf    devconf, B      ; device configuration cleared
         movlw   1
         movwf   devstat, B      ; Self-Powered !Remote-Wakeup
@@ -167,7 +182,6 @@ usb_service_reset_end:
         movwf   custat, B       ; save a copy of USTAT
         andlw   0x7C            ; mask out EP and DIRECTION (OUT, IN)
         movwf   FSR0L, A        ; FSR0L = LSB into the endpoint
-        banksel bufdesc
         movf    POSTINC0, W, A
         movwf   bufdesc+0, B    ; BDnxST
         movf    POSTINC0, W, A
@@ -479,9 +493,10 @@ get_configuration:
         movwf   FSR0H, A
         movf    BD0IAL, W, B
         movwf   FSR0L, A
+
         banksel uswstat
-        movlw   ADDRESS_STATE
-        subwf   uswstat, W, B   ; if (uswstat == ADDRESS_STATE)
+        movlw   ADDRESSED_STATE
+        subwf   uswstat, W, B   ; if (uswstat == ADDRESSED_STATE)
         btfss   STATUS, Z, A    ;   INDF0 = 0;
         movf    devconf, W, B   ; else
         movwf   INDF0, A        ;   INDF0 = devconf;
@@ -502,8 +517,9 @@ set_configuration:
 
 unset_configuration:
         call    ep_disable_1_15 ; disable eps from 1 to 15
-        movlw   ADDRESS_STATE
-        movwf   uswstat, B      ; uswstate = ADDRESS_STATE
+        movlw   ADDRESSED_STATE
+        call    usb_change_state
+        banksel devconf
         clrf    devconf, B      ; deconf = 0
         bra     ep0_send_ack
 
@@ -539,8 +555,8 @@ set_configuration_1:
         movlw   1
         banksel devconf
         movwf   devconf, B      ; devconf = 1
-        movlw   CONFIG_STATE
-        movwf   uswstat, B      ; uswtat = CONFIG_STATE
+        movlw   CONFIGURED_STATE
+        call    usb_change_state
         bra     ep0_send_ack
 
 get_interface:
@@ -704,11 +720,7 @@ usb_in_token:
         bz      usb_in_ep2
         return
 usb_in_ep1:
-#ifdef USARTDEBUG
-        movlw   '<'
-        call    usart_send
-#endif
-        bsf     hidstat, 0, B
+        call    usb_tx_event
         banksel BD1IBC
         movlw   IREPORT_SIZE
         movwf   BD1IBC, B
@@ -733,8 +745,8 @@ usb_in_ep0_setaddress:
         movwf   UADDR, A        ; save the pending addr to the USB UADDR
         movlw   DEFAULT_STATE   ; UADDR == 0 -> the device is in default state
         btfss   STATUS, Z, A
-        movlw   ADDRESS_STATE   ; UADDR != 0 -> the device is in addressed state
-        movwf   uswstat, B
+        movlw   ADDRESSED_STATE   ; UADDR != 0 -> the device is in addressed state
+        call    usb_change_state
         return
 usb_in_ep0_getdescriptor:
         bra     send_descriptor_packet
@@ -753,11 +765,7 @@ usb_out_token:
 usb_out_ep1:
         return                  ; ep1 is an IN endpoint
 usb_out_ep2:
-#ifdef USARTDEBUG
-        movlw   '>'
-        call    usart_send
-#endif
-        bsf     hidstat, 1, B
+        call    usb_rx_event
         banksel BD2OBC
         movlw   OREPORT_SIZE
         movwf   BD2OBC, B
@@ -801,17 +809,17 @@ check_allow_onlyep0:
         andlw   0x1F            ; W = recipient (device=0, interface=1, endpoint=2)
         addlw   -2
         bnz     check_allow_addressed
-        movlw   ADDRESS_STATE
+        movlw   ADDRESSED_STATE
         subwf   uswstat, W, B   ; set the C flag
         movf    bufdata+4, W, B ; if the request is for ep (C flag unaffected)
         andlw   0x0F            ; (C flag unaffected)
         bnz     check_request_err
         bra     check_request_toggle
 check_allow_addressed:
-        movlw   ADDRESS_STATE
+        movlw   ADDRESSED_STATE
         bra     check_request_ok
 check_allow_configured:
-        movlw   CONFIG_STATE
+        movlw   CONFIGURED_STATE
 check_request_ok:
         subwf   uswstat, W, B
 check_request_toggle:
@@ -908,17 +916,6 @@ lookup_descriptor:
         addwfc  TBLPTRU, F, A
         tblrd   *
         movf    TABLAT, W, A
-        return
-
-usb_data_received:
-        banksel hidstat
-        btfsc   hidstat, 1, B
-        bra     usb_data_received_0
-        bcf     STATUS, C, A
-        return
-usb_data_received_0:
-        bcf     hidstat, 1, B
-        bsf     STATUS, C, A
         return
 
 .usbjumptables  code    0x300

@@ -2,6 +2,9 @@
         include "delay.inc"
         include "usart.inc"
         include "usb.inc"
+        include "usbdef.inc"
+
+        global usb_tx_event, usb_rx_event, usb_status_event
 
         ;; fuses configuration
         config  FOSC=INTOSCIO   ; internal oscillator block (16MHz)
@@ -92,5 +95,20 @@ main:
 main_loop:
         call    usb_service
         bra     main_loop
+
+usb_status_event:
+        return
+
+usb_tx_event:
+        lfsr    FSR0, BD1IBC
+        call    usart_send_h8
+        movlw   'T'
+        call    usart_send
+        call    usart_send_nl
+        return
+
+usb_rx_event:
+        btg     LATB, RB5, A
+        return
 
         end
