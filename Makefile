@@ -14,9 +14,9 @@ $(OUTPUT): $(OBJECTS)
 
 # explicit dependencies
 delay.o: config.inc
-main.o: config.inc delay.inc usart.inc usb.inc
+main.o: config.inc delay.inc usart.inc usb.inc usbdef.inc
 usart.o: config.inc usart.inc
-usb.o: config.inc usb.inc
+usb.o: config.inc usb.inc usbdef.inc
 
 .PHONY = clean erase flash
 
