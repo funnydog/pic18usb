@@ -97,14 +97,13 @@ main_loop:
         bra     main_loop
 
 usb_status_event:
+        addlw   '0'
+        call    usart_send
+        call    usart_send_nl
         return
 
 usb_tx_event:
-        lfsr    FSR0, BD1IBC
-        call    usart_send_h8
-        movlw   'T'
-        call    usart_send
-        call    usart_send_nl
+        btg     LATB, RB4, A
         return
 
 usb_rx_event:
