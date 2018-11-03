@@ -76,34 +76,23 @@ usb_change_state:
         ;;
         ;; Return: nothing
 usb_init:
+        ;; set RB3 as input to sense the VBus voltage
+        bsf     TRISB, RB3, A
+
         ;; enable the Active Clock Tuning to USB clock
         movlw   1<<ACTSRC
         movwf   ACTCON, A       ; set USB as source
         bsf     ACTCON, ACTEN, A
 
-        ;; prepare the USB module
+        ;; USB global settings
         clrf    UCON, A         ; disable the USB module
         clrf    UIE, A          ; mask the USB interrupts
-        clrf    UIR, A          ; clear the USB interrupt flags
         movlw   1<<UPUEN|1<<FSEN
         movwf   UCFG, A         ; D+pullup | FullSpeed enable
-        movlw   1<<USBEN
-        movwf   UCON, A         ; enable the USB module
 
-        movlw   DEFAULT_STATE
+        ;; set the device to POWERED state
         banksel uswstat
-        movwf   uswstat, B
-
-        movlw   0xFF
-        banksel devreq
-        movwf   devreq, B       ; current request = 0xFF (no request)
-        clrf    penaddr, B      ; pending address
-        clrf    devconf, B      ; current configuration
-        movlw   1
-        movwf   devstat, B      ; current status (1 = self powered)
-
-        btfsc   UCON, SE0, A    ; wait until SE0 == 0
-        bra     $-2
+        clrf    uswstat, B
 
         ;; set up the endpoint buffer descriptors
         movlw   0x00            ; EP0 - Output
@@ -138,6 +127,41 @@ usb_init_loop0:
         ;;
         ;; Return: nothing
 usb_service:
+        banksel uswstat
+        movf    uswstat, W, B
+        bnz     usb_service_enabled
+
+usb_service_disabled:
+        btfss   PORTB, RB3, A
+        return
+        ;; prepare the USB module
+        clrf    UIR, A          ; clear the USB interrupt flags
+        movlw   1<<USBEN
+        movwf   UCON, A         ; enable the USB module
+        movlw   0xFF
+        banksel devreq
+        movwf   devreq, B       ; current request = 0xFF (no request)
+        clrf    penaddr, B      ; pending address
+        clrf    devconf, B      ; current configuration
+        movlw   1
+        movwf   devstat, B      ; current status (1 = self powered)
+        btfsc   UCON, SE0, A    ; wait until SE0 == 0
+        bra     $-2
+        movlw   DEFAULT_STATE
+        bra     usb_change_state
+
+usb_service_enabled:
+        btfsc   PORTB, RB3, A
+        bra     usb_service_flags
+usb_service_enabled_loop0:
+        bcf     UCON, SUSPND, A ; make sure SUSPND bit is clear
+        btfsc   UCON, SUSPND, A
+        bra     usb_service_enabled_loop0
+        clrf    UCON, A         ; disable the USB module
+        movlw   0
+        bra     usb_change_state
+
+usb_service_flags:
         ;; received Start-Of-Frame
         btfsc   UIR, SOFIF, A
         bcf     UIR, SOFIF, A

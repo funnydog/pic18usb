@@ -1,8 +1,9 @@
         ;; device state
-DEFAULT_STATE    EQU     0       ; state after a USB reset
-ADDRESSED_STATE  EQU     1       ; the device is addressed
-CONFIGURED_STATE EQU     2       ; the device is configured
-SUSPENDED_STATE  EQU     3       ; the device is suspended
+POWERED_STATE    EQU     0      ; the device is powered
+DEFAULT_STATE    EQU     1      ; state after a USB reset
+ADDRESSED_STATE  EQU     2      ; the device is addressed
+CONFIGURED_STATE EQU     3      ; the device is configured
+SUSPENDED_STATE  EQU     4      ; the device is suspended
 
         ;; BDnSTAT bit definitions
 UOWN    EQU     7
