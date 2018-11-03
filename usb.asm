@@ -119,25 +119,17 @@ usb_init:
         lfsr    FSR0, USBDATA+24
         call    usb_set_epaddr
 
-        ;; control data for EP1
-        banksel USBDATA+16
-        movlw   0x01
-        movwf   USBDATA+16, B
-        movlw   0xAD
-        movwf   USBDATA+17, B
-        movlw   0xBE
-        movwf   USBDATA+18, B
-        movlw   0xEF
-        movwf   USBDATA+19, B
-        movlw   0xCA
-        movwf   USBDATA+20, B
-        movlw   0xFE
-        movwf   USBDATA+21, B
-        movlw   0xBA
-        movwf   USBDATA+22, B
-        movlw   0xBE
-        movwf   USBDATA+23, B
-
+        ;; initialize the USB RAM
+        lfsr    FSR0, USBDATA+16
+        movlw   1               ; the first byte of the EP1 buffer
+        movwf   POSTINC0, A     ; is the report number
+        movlw   15
+        banksel cnt
+        movwf   cnt, B
+usb_init_loop0:
+        clrf    POSTINC0, A
+        decfsz  cnt, F, B
+        bra     usb_init_loop0
         return
 
         ;; usb_service() - service the USB engine flags
