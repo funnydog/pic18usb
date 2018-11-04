@@ -708,11 +708,10 @@ xx_feature_send:
         ;; process the class requests
 class_requests:
         movf    bufdata+1, W, B
-        addlw   -0x0a           ; SET_IDLE
+        addlw   -0x0A           ; SET_IDLE
         bz      set_idle
         bra     ep0_stall_error
 set_idle:
-class_requests_ack:
         bra     ep0_send_ack
 
         ;; process the vendor requests
@@ -959,7 +958,9 @@ Device:
         db      0x12            ; bLength
         db      0x01            ; bDescriptorType = 1 (Device)
         db      0x10, 0x01      ; bcdUSB = USB 1.10
-        db      0x00, 0x00, 0x00 ; USB-IF class, subclass, protocol
+        db      0x00            ; USB-IF class
+        db      0x00            ; USB-IF subclass
+        db      0x00            ; USB-IF protocol
         db      MAXPACKETSIZE0  ; maxPacketSize0 for ENDP0
         db      0xD8, 0x04      ; idVendor
         db      0x01, 0x00      ; idProduct
