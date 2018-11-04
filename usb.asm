@@ -1,11 +1,8 @@
         include "config.inc"
         include "usbdef.inc"
-        include "usart.inc"
 
         global  usb_init, usb_service, usb_set_epaddr, usb_get_epaddr
         extern  usb_rx_event, usb_tx_event, usb_status_event
-
-;; #define USARTDEBUG              ; defined if usart debugging is enabled
 
 MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 IREPORT_SIZE    equ     8
@@ -364,10 +361,6 @@ ep0_send_data:
         ;;
         ;; stall ep0 input and output
 ep0_stall_error:
-#ifdef USARTDEBUG
-        movlw   'E'
-        call    usart_send
-#endif
         banksel devreq
         movlw   0xFF
         movwf   devreq, B       ; set devreq to 0xFF
@@ -380,12 +373,6 @@ ep0_stall_error:
         return
 
 usb_setup_token:
-#ifdef USARTDEBUG
-        call    usart_send_nl
-        movlw   'S'
-        call    usart_send
-#endif
-
         ;; copy the received packet into bufdata
         banksel bufdata
         movf    bufdesc+2, W, B ; LSB of the address
@@ -446,25 +433,12 @@ usb_setup_token_1:
 
         ;; process the standard requests
 standard_requests:
-#ifdef USARTDEBUG
-        movlw   'S'
-        call    usart_send
-#endif
         movf    bufdata+1, W, B
         movwf   devreq, B
         addlw   255 - 12
         addlw   (12 - 0) + 1
         btfss   STATUS, C, A
         bra     ep0_stall_error ; check if devreq is in range 0..12
-#ifdef USARTDEBUG
-        ;; send the R number
-        movlw   'R'
-        call    usart_send
-        lfsr    FSR0, devreq
-        call    usart_send_h8
-        movlw   ' '
-        call    usart_send
-#endif
         movlw   UPPER(standard_requests_table)
         movwf   PCLATU, A
         movlw   HIGH(standard_requests_table)
@@ -733,30 +707,16 @@ xx_feature_send:
 
         ;; process the class requests
 class_requests:
-#ifdef USARTDEBUG
-        movlw   'C'
-        call    usart_send
-#endif
         movf    bufdata+1, W, B
         addlw   -0x0a           ; SET_IDLE
         bz      set_idle
         bra     ep0_stall_error
 set_idle:
-#ifdef USARTDEBUG
-        lfsr    FSR0, bufdata+2
-        call    usart_send_h8
-        movf    PLUSW0, W, A
-        call    usart_send_h8
-#endif
 class_requests_ack:
         bra     ep0_send_ack
 
         ;; process the vendor requests
 vendor_requests:
-#ifdef USARTDEBUG
-        movlw   'V'
-        call    usart_send
-#endif
         movf    bufdata+1, W, B ; bRequest
         bz      vendor_set
         bra     ep0_stall_error
@@ -889,15 +849,6 @@ check_request_toggle:
 send_with_length:
         call    save_lookup_descriptor
         movwf   bleft, B        ; length of the bytes to send
-#ifdef USARTDEBUG
-        call    usart_send_nl
-        movlw   'P'
-        call    usart_send
-        lfsr    FSR0, bleft
-        call    usart_send_h8
-        movlw   ' '
-        call    usart_send
-#endif
 
         ;; send the data in TABLAT
         ;; until bleft is zero
@@ -925,12 +876,6 @@ send_descriptor_packet_2:
 
         banksel BD0IBC
         movwf   BD0IBC, B       ; byte count to send
-#ifdef USARTDEBUG
-        addlw   '0'
-        call    usart_send
-        movlw   ' '
-        call    usart_send
-#endif
         movf    BD0IAH, W, B
         movwf   FSR0H, A
         movf    BD0IAL, W, B
