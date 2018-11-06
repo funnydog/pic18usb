@@ -342,6 +342,32 @@ ep_dir_valid:
         bsf     STATUS, C, A
         return
 
+        ;; ep_bdt_prepare() - prepare the buffer descriptor
+        ;; @W: size of the buffer
+        ;; @custat: current endpoint
+        ;;
+        ;; Prepare the buffer descriptor for the next transaction.
+        ;; This function mangles FSR0
+        ;;
+        ;; Returns: nothing
+ep_bdt_prepare:
+        banksel cnt
+        movwf   cnt, B          ; save the buffer size to cnt
+        movf    custat, W, B
+        andlw   0x3C
+        addlw   1
+        movwf   FSR0L, A
+        movlw   HIGH(BD0OBC)
+        movwf   FSR0H, A        ; FSR0 points to BDnnCNT
+        movf    cnt, W, B
+        movwf   POSTDEC0, A     ; save the buffer size to cnt
+        movf    INDF0, W, A     ;
+        xorlw   1<<DTS          ; toggle DATA bit
+        andlw   1<<DTS          ; filter it
+        iorlw   1<<UOWN|1<<DTSEN
+        movwf   INDF0, A        ; save it
+        return
+
         ;; ep0_send_ack
         ;;
         ;; send an empty acknowledge packet
@@ -728,28 +754,17 @@ vendor_send:
         ;; process the IN (send to the host) token
 usb_in_token:
         banksel custat
-        movf    custat, W, B
-        andlw   0x18            ; get the EP bits
+        rlncf   custat, W, B
+        andlw   0xF0
         bz      usb_in_ep0
-        addlw   -(1<<3)
-        bz      usb_in_ep1
-        addlw   -(1<<3)
-        bz      usb_in_ep2
-        return
-usb_in_ep1:
+        movwf   cnt, B
+        swapf   cnt, W, B
+        iorlw   0x80
         call    usb_tx_event
-        banksel BD1IBC
         movlw   IREPORT_SIZE
-        movwf   BD1IBC, B
-        movf    BD1IST, W, B
-        xorlw   1<<DTS          ; toggle DATA bit
-        andlw   1<<DTS          ; filter it
-        iorlw   1<<UOWN|1<<DTSEN
-        movwf   BD1IST, B
-        return
-usb_in_ep2:
-        return                  ; ep2 is an OUT endpoint
+        bra     ep_bdt_prepare
 
+        ;; process the special EP0 IN transaction
 usb_in_ep0:
         movf    devreq, W, B
         addlw   -5              ; 5 = set_address
@@ -763,36 +778,23 @@ usb_in_ep0_setaddress:
         movlw   DEFAULT_STATE   ; UADDR == 0 -> the device is in default state
         btfss   STATUS, Z, A
         movlw   ADDRESSED_STATE   ; UADDR != 0 -> the device is in addressed state
-        call    usb_change_state
-        return
+        bra     usb_change_state
 usb_in_ep0_getdescriptor:
         bra     send_descriptor_packet
 
         ;; process the OUT (receive from host) token
 usb_out_token:
         banksel custat
-        movf    custat, W, B
-        andlw   0x18
+        rlncf   custat, W, B
+        andlw   0xF8
         bz      usb_out_ep0
-        addlw   -(1<<3)
-        bz      usb_out_ep1
-        addlw   -(1<<3)
-        bz      usb_out_ep2
-        return
-usb_out_ep1:
-        return                  ; ep1 is an IN endpoint
-usb_out_ep2:
+        movwf   cnt, B
+        swapf   cnt, W, B
         call    usb_rx_event
-        banksel BD2OBC
         movlw   OREPORT_SIZE
-        movwf   BD2OBC, B
-        movf    BD2OST, W, B
-        xorlw   1<<DTS          ; toggle DATA bit
-        andlw   1<<DTS          ; filter it
-        iorlw   1<<UOWN|1<<DTSEN
-        movwf   BD2OST, B
-        return
+        bra     ep_bdt_prepare
 
+        ;; process the special EP0 OUT transaction
 usb_out_ep0:
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
