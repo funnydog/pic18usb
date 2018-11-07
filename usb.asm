@@ -401,7 +401,7 @@ ep0_stall_error:
 
 usb_setup_token:
         ;; copy the received packet into bufdata
-        banksel bufdata
+        banksel bufdesc
         movf    bufdesc+2, W, B ; LSB of the address
         movwf   FSR0L, A
         movf    bufdesc+3, W, B ; MSB of the address
