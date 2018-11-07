@@ -344,28 +344,29 @@ ep_dir_valid:
 
         ;; ep_bdt_prepare() - prepare the buffer descriptor
         ;; @W: size of the buffer
-        ;; @custat: current endpoint
+        ;; @custat: current endpoint in the 0x8F format
         ;;
         ;; Prepare the buffer descriptor for the next transaction.
-        ;; This function mangles FSR0
+        ;;
+        ;; This function mangles FSR1.
         ;;
         ;; Returns: nothing
 ep_bdt_prepare:
         banksel cnt
         movwf   cnt, B          ; save the buffer size to cnt
-        movf    custat, W, B
-        andlw   0x3C
-        addlw   1
-        movwf   FSR0L, A
-        movlw   HIGH(BD0OBC)
-        movwf   FSR0H, A        ; FSR0 points to BDnnCNT
+        movf    custat, W, B    ; take the current USTAT register
+        andlw   0x3C            ; filter out the EP number and direction
+        addlw   1               ; add 1 for BDnnCNT
+        movwf   FSR1L, A        ; save into FSR1L
+        movlw   HIGH(BD0OBC)    ; save the HIGH part of BDnnBC into FRS1H
+        movwf   FSR1H, A        ; FSR1 points to BDnnCNT
         movf    cnt, W, B
-        movwf   POSTDEC0, A     ; save the buffer size to cnt
-        movf    INDF0, W, A     ;
+        movwf   POSTDEC1, A     ; save the buffer size to cnt
+        movf    INDF1, W, A     ; FSR1 now points to BDnnSTAT
         xorlw   1<<DTS          ; toggle DATA bit
         andlw   1<<DTS          ; filter it
         iorlw   1<<UOWN|1<<DTSEN
-        movwf   INDF0, A        ; save it
+        movwf   INDF1, A        ; save it
         return
 
         ;; ep0_send_ack
