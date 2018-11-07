@@ -662,13 +662,13 @@ get_status_err:
         bra     ep0_stall_error
 get_status_device:
         movf    devstat, W, B
-        movwf   POSTINC0, A      ; byte[0] = devstat
+        movwf   INDF0, A         ; byte[0] = devstat
         bra     get_status_send
 get_status_interface:
         movlw   1                ; max number of interfaces
         subwf   bufdata+4, W, B  ; wIndex (interface number)
         bc      get_status_err   ; interface doesn't exist
-        clrf    POSTINC0, A      ; byte[0] = 0
+        clrf    INDF0, A         ; byte[0] = 0
         bra     get_status_send
 get_status_endpoint:
         movf    bufdata+4, W, B
@@ -676,16 +676,15 @@ get_status_endpoint:
         bc      get_status_err
         movf    bufdata+4, W, B ; wIndex (endpoint number | 0x80)
         call    ep_bdt_lookup
+        clrf    INDF0, A        ; byte[0] = 0
         movf    INDF1, W, A     ; check the stall bit
         andlw   1<<BSTALL
-        movwf   INDF0, A        ; 00 00 00 00 00 D2 00 00
-        rrncf   INDF0, F, A     ; 00 00 00 00 00 00 D2 00
-        rrncf   POSTINC0, F, A  ; 00 00 00 00 00 00 00 D2
-        bra     get_status_send
+        btfss   STATUS, Z, A
+        incf    INDF0, F, A
 get_status_send:
-        clrf    INDF0, A
-        movlw   0x02
-        bra     ep0_send_data
+        clrf    PREINC0, A      ; byte[1] = 0
+        movlw   0x02            ;
+        bra     ep0_send_data   ; send 2 bytes
 
 clear_feature:
 set_feature:
