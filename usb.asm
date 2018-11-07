@@ -26,47 +26,6 @@ bleft   res     1               ; descriptor length
 
 .usbst  code
 
-
-        ;; usb_set_epaddr() - set the address of the endpoint
-        ;; @W:    endpoint number (0x80 for input)
-        ;; @FSR0: address of the endpoint
-        ;;
-        ;; This functions mangles FSR1.
-        ;;
-        ;; Return: nothing
-usb_set_epaddr:
-        call    ep_bdt_lookup
-        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
-        movf    FSR0L, W, A
-        movwf   POSTINC1, A
-        movf    FSR0H, W, A
-        movwf   INDF1, A
-        return
-
-        ;; usb_get_epaddr() - get the address of the endpoint
-        ;; @W:    endpoint number (0x80 for input)
-        ;;
-        ;; This functions mangles FSR0 and FSR1.
-        ;;
-        ;; Return: address of the USB buffer in FSR0
-usb_get_epaddr:
-        call    ep_bdt_lookup
-        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
-        movf    POSTINC1, W, A
-        movwf   FSR0L, A
-        movf    INDF1, W, A
-        movwf   FSR0H, A
-        return
-
-        ;; usb_change_state() - change the state of the device
-        ;; @W: state of the device
-        ;;
-        ;; Return: nothing
-usb_change_state:
-        banksel uswstat
-        movwf   uswstat, B
-        goto    usb_status_event
-
         ;; usb_init() - enable the USB module
         ;;
         ;; Enable the USB module and setup the data
@@ -313,6 +272,37 @@ ep_bdt_lookup:
         movwf   FSR1H, A
         return
 
+        ;; usb_set_epaddr() - set the address of the endpoint
+        ;; @W:    endpoint number (0x80 for input)
+        ;; @FSR0: address of the endpoint
+        ;;
+        ;; This functions mangles FSR1.
+        ;;
+        ;; Return: nothing
+usb_set_epaddr:
+        call    ep_bdt_lookup
+        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
+        movf    FSR0L, W, A
+        movwf   POSTINC1, A
+        movf    FSR0H, W, A
+        movwf   INDF1, A
+        return
+
+        ;; usb_get_epaddr() - get the address of the endpoint
+        ;; @W:    endpoint number (0x80 for input)
+        ;;
+        ;; This functions mangles FSR0 and FSR1.
+        ;;
+        ;; Return: address of the USB buffer in FSR0
+usb_get_epaddr:
+        call    ep_bdt_lookup
+        bsf     FSR1L, 1, A     ; add 2 to FSR1 -> BDnnAL
+        movf    POSTINC1, W, A
+        movwf   FSR0L, A
+        movf    INDF1, W, A
+        movwf   FSR0H, A
+        return
+
         ;; ep_dir_valid() - check if the EP direction is correct
         ;; @W: EP number [ | 0x80 ] (see below)
         ;;
@@ -368,6 +358,15 @@ ep_bdt_prepare:
         iorlw   1<<UOWN|1<<DTSEN
         movwf   INDF1, A        ; save it
         return
+
+        ;; usb_change_state() - change the state of the device
+        ;; @W: state of the device
+        ;;
+        ;; Return: nothing
+usb_change_state:
+        banksel uswstat
+        movwf   uswstat, B
+        goto    usb_status_event
 
         ;; ep0_send_ack
         ;;
