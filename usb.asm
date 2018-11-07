@@ -8,11 +8,21 @@ MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 IREPORT_SIZE    equ     8
 OREPORT_SIZE    equ     8
 
+jmpt    macro   addr, reg, accs
+        movlw   UPPER(addr)
+        movwf   PCLATU, A
+        movlw   HIGH(addr)
+        movwf   PCLATH, A
+        rlncf   reg, W, accs
+        addlw   LOW(addr)
+        movwf   PCL, A
+        endm
+
 .usbd1  udata
 
 cnt     res     1               ; counter variable
 custat  res     1               ; current copy of USTAT
-bufdesc res     4               ; current copy of the EP buffer descriptor
+bdcopy  res     4               ; SIE managed buffer descriptor copy
 bufdata res     8               ; buffer data
 devreq  res     1               ; code of the received request
 devconf res     1               ; current configuration
@@ -190,41 +200,34 @@ usb_service_reset_end:
 
         ;; Transaction complete
         btfss   UIR, TRNIF, A
-        bra     usb_service_trn_end
+        return
 
-        ;; save the BD registers owned by the SIE
-        ;; in the bufdesc buffer
-        movlw   HIGH(BD0OST)
-        movwf   FSR0H, A        ; FSR0H = MSB 0x400
+        ;; save the BD registers owned by the SIE in the bdcopy buffer
         movf    USTAT, W, A     ; content of USTAT
         banksel custat
         movwf   custat, B       ; save a copy of USTAT
         andlw   0x7C            ; mask out EP and DIRECTION (OUT, IN)
         movwf   FSR0L, A        ; FSR0L = LSB into the endpoint
+        movlw   HIGH(BD0OST)
+        movwf   FSR0H, A        ; FSR0 now points to the current BDnnSTat
         movf    POSTINC0, W, A
-        movwf   bufdesc+0, B    ; BDnxST
+        movwf   bdcopy+0, B     ; SIE BDnSTAT
         movf    POSTINC0, W, A
-        movwf   bufdesc+1, B    ; BDnxCNT
+        movwf   bdcopy+1, B     ; BD Byte Count
         movf    POSTINC0, W, A
-        movwf   bufdesc+2, B    ; BDnxAL
+        movwf   bdcopy+2, B     ; BD Address Low
         movf    POSTINC0, W, A
-        movwf   bufdesc+3, B    ; BDnxAH
+        movwf   bdcopy+3, B     ; BD Address High
+        bcf     UIR, TRNIF, A   ; advance USTAT FIFO, BD now CPU owned
 
-        bcf     UIR, TRNIF, A   ; advance the USTAT FIFO
-
-        movf    bufdesc+0, W, B ; extract the packet identifier
-        andlw   0x3C            ; 00 00 P3 P2 P1 P0 00 00
-        addlw   -(1<<2)         ; 0b0001 - token out
-        btfsc   STATUS, Z, A
-        goto    usb_out_token
-        addlw   -(8<<2)         ; 0b1001 - token in
-        btfsc   STATUS, Z, A
-        goto    usb_in_token
-        addlw   -(4<<2)         ; 0b1101 - token setup
-        btfsc   STATUS, Z, A
-        goto    usb_setup_token
-usb_service_trn_end:
-        return
+        movlw   UPPER(packet_handlers)
+        movwf   PCLATU, A
+        movlw   HIGH(packet_handlers)
+        movwf   PCLATH, A
+        rrncf   bdcopy+0, W, B  ; get the PIDs
+        andlw   0x1E            ; filter out the needed bits
+        addlw   LOW(packet_handlers)
+        movwf   PCL, A
 
         ;; disable the endpoints from 0 to 15
 ep_disable_0_15:
@@ -400,18 +403,18 @@ ep0_stall_error:
 
 usb_setup_token:
         ;; copy the received packet into bufdata
-        banksel bufdesc
-        movf    bufdesc+2, W, B ; LSB of the address
+        banksel bdcopy
+        movf    bdcopy+2, W, B  ; LSB of the address
         movwf   FSR0L, A
-        movf    bufdesc+3, W, B ; MSB of the address
+        movf    bdcopy+3, W, B  ; MSB of the address
         movwf   FSR0H, A        ; FSR0 points to the buffer for EP0
         lfsr    FSR1, bufdata   ; FSR1 points to the private bufdata
 
-        movf    bufdesc+1, W, B ; load the byte count
+        movf    bdcopy+1, W, B  ; load the byte count
         sublw   MAXPACKETSIZE0
         movlw   MAXPACKETSIZE0
         btfss   STATUS, C, A    ; avoid overflows
-        movf    bufdesc+1, W, B
+        movf    bdcopy+1, W, B
         movwf   cnt, B
 usb_setup_copy:
         movf    POSTINC0, W, A
@@ -465,13 +468,7 @@ standard_requests:
         addlw   (12 - 0) + 1
         btfss   STATUS, C, A
         bra     ep0_stall_error ; check if devreq is in range 0..12
-        movlw   UPPER(standard_requests_table)
-        movwf   PCLATU, A
-        movlw   HIGH(standard_requests_table)
-        movwf   PCLATH, A
-        rlncf   devreq, W, B
-        addlw   LOW(standard_requests_table)
-        movwf   PCL, A
+        jmpt     standard_requests_table, devreq, B
 
 set_address:
         call    check_request_acl ; ACL check
@@ -751,22 +748,16 @@ vendor_set:
 vendor_send:
         bra     ep0_send_ack
 
-        ;; process the IN (send to the host) token
+        ;; usb_in_token() - process an IN token
+        ;;
+        ;; process the IN (device -> host) token
+        ;;
+        ;; Return: nothing
 usb_in_token:
-        banksel custat
         rlncf   custat, W, B
         andlw   0xF0
-        bz      usb_in_ep0
-        movwf   cnt, B
-        swapf   cnt, W, B
-        iorlw   0x80
-        call    usb_tx_event
-        movlw   IREPORT_SIZE
-        bra     ep_bdt_prepare
-
-        ;; process the special EP0 IN transaction
-usb_in_ep0:
-        movf    devreq, W, B
+        bnz     usb_in_token_anyep
+        movf    devreq, W, B    ; endpoint 0
         addlw   -5              ; 5 = set_address
         bz      usb_in_ep0_setaddress
         addlw   -1              ; 6 = get_descriptor
@@ -777,31 +768,39 @@ usb_in_ep0_setaddress:
         movwf   UADDR, A        ; save the pending addr to the USB UADDR
         movlw   DEFAULT_STATE   ; UADDR == 0 -> the device is in default state
         btfss   STATUS, Z, A
-        movlw   ADDRESSED_STATE   ; UADDR != 0 -> the device is in addressed state
+        movlw   ADDRESSED_STATE ; UADDR != 0 -> the device is in addressed state
         bra     usb_change_state
 usb_in_ep0_getdescriptor:
         bra     send_descriptor_packet
-
-        ;; process the OUT (receive from host) token
-usb_out_token:
-        banksel custat
-        rlncf   custat, W, B
-        andlw   0xF8
-        bz      usb_out_ep0
+usb_in_token_anyep:             ; endpoints 1..15
         movwf   cnt, B
         swapf   cnt, W, B
-        call    usb_rx_event
-        movlw   OREPORT_SIZE
+        iorlw   0x80
+        call    usb_tx_event
+        movlw   IREPORT_SIZE
         bra     ep_bdt_prepare
 
-        ;; process the special EP0 OUT transaction
-usb_out_ep0:
-        banksel BD0OBC
+        ;; usb_out_token() - process an OUT token
+        ;;
+        ;; process the OUT (host -> device) token
+        ;;
+        ;; Return: nothing
+usb_out_token:
+        rlncf   custat, W, B
+        andlw   0xF8
+        bnz     usb_out_token_anyep
+        banksel BD0OBC          ; endpoint 0
         movlw   MAXPACKETSIZE0
         movwf   BD0OBC, B       ; MAXPACKETSIZE0 bytes
         movlw   1<<UOWN|1<<DTSEN
         movwf   BD0OST, B       ; UOWN, DATA0
         bra     ep0_send_ack
+usb_out_token_anyep:
+        movwf   cnt, B          ; endpoints 1..15
+        swapf   cnt, W, B
+        call    usb_rx_event
+        movlw   OREPORT_SIZE
+        bra     ep_bdt_prepare
 
         ;; check if the request is allowed for each state
 check_request_acl:
@@ -810,13 +809,8 @@ check_request_acl:
         addlw   255 - 12
         addlw   (12 - 0) + 1
         bnc     check_request_err
-        movlw   UPPER(check_request_table)
-        movwf   PCLATU, A
-        movlw   HIGH(check_request_table)
-        movwf   PCLATH, A
-        rlncf   bufdata+1, W, B
-        addlw   LOW(check_request_table)
-        movwf   PCL, A
+        jmpt    check_request_table, bufdata+1, B
+
 check_request_err:
         bsf     STATUS, C, A
         return
@@ -952,6 +946,24 @@ check_request_table:
         bra     check_allow_configured ; GET_INTERFACE    (10)
         bra     check_allow_configured ; SET_INTERFACE    (11)
         bra     check_allow_configured ; SYNCH_FRAME      (12)
+
+packet_handlers:
+        return                  ; 0000 - special-reserved
+        bra     usb_out_token   ; 0001 - token-out
+        return                  ; 0010 - handshake-ack
+        return                  ; 0011 - data-data0
+        return                  ; 0100 - special-ping
+        return                  ; 0101 - token-sof
+        return                  ; 0110 - handshake-nyet
+        return                  ; 0111 - data-data2
+        return                  ; 1000 - special-split
+        bra     usb_in_token    ; 1001 - token-in
+        return                  ; 1010 - handshake-nack
+        return                  ; 1011 - data-data1
+        return                  ; 1100 - special-err/pre
+        bra     usb_setup_token ; 1101 - token-setup
+        return                  ; 1110 - handshake-stall
+        return                  ; 1111 - data-mdata
 
 .usbtables      CODE_PACK
 
