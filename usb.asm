@@ -748,7 +748,7 @@ vendor_requests:
         bra     ep0_stall_error
 vendor_set:
         movf    bufdata+2, W, B ; wValue
-        movwf   LATB, A
+        ;; movwf   LATB, A
 vendor_send:
         bra     ep0_send_ack
 
