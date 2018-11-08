@@ -210,20 +210,16 @@ usb_service_reset_end:
         movwf   FSR0L, A        ; FSR0L = LSB into the endpoint
         movlw   HIGH(BD0OST)
         movwf   FSR0H, A        ; FSR0 now points to the current BDnnSTat
-        movf    POSTINC0, W, A
-        movwf   bdcopy+0, B     ; SIE BDnSTAT
-        movf    POSTINC0, W, A
-        movwf   bdcopy+1, B     ; BD Byte Count
-        movf    POSTINC0, W, A
-        movwf   bdcopy+2, B     ; BD Address Low
-        movf    POSTINC0, W, A
-        movwf   bdcopy+3, B     ; BD Address High
+        lfsr    FSR1, bdcopy
+        movlw   4
+        call    memcpy
         bcf     UIR, TRNIF, A   ; advance USTAT FIFO, BD now CPU owned
 
         movlw   UPPER(packet_handlers)
         movwf   PCLATU, A
         movlw   HIGH(packet_handlers)
         movwf   PCLATH, A
+        banksel bdcopy
         rrncf   bdcopy+0, W, B  ; get the PIDs
         andlw   0x1E            ; filter out the needed bits
         addlw   LOW(packet_handlers)
@@ -251,6 +247,20 @@ ep_disable_3_15:
         clrf    UEP13, A
         clrf    UEP14, A
         clrf    UEP15, A
+        return
+
+        ;; memcpy() - copy W bytes from src to dst
+        ;; @FSR0: src
+        ;; @FSR1: dst
+        ;; @W: byte count
+        ;;
+        ;; Copy W bytes from src to dst.
+        ;;
+        ;; Return: nothing
+memcpy:
+        movff   POSTINC0, POSTINC1
+        addlw   -1
+        bnz     memcpy
         return
 
         ;; ep_bdt_lookup() - load the BD addr into FSR1
@@ -415,12 +425,7 @@ usb_setup_token:
         movlw   MAXPACKETSIZE0
         btfss   STATUS, C, A    ; avoid overflows
         movf    bdcopy+1, W, B
-        movwf   cnt, B
-usb_setup_copy:
-        movf    POSTINC0, W, A
-        movwf   POSTINC1, A
-        decfsz  cnt, F, B
-        bra     usb_setup_copy
+        call    memcpy
 
         banksel BD0OBC
         movlw   MAXPACKETSIZE0
