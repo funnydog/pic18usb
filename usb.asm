@@ -68,14 +68,14 @@ usb_init:
         lfsr    FSR0, USBDATA+MAXPACKETSIZE0
         call    usb_set_epaddr
         movlw   0x81            ; EP1 - Input
-        lfsr    FSR0, USBDATA+16
+        lfsr    FSR0, USBDATA+MAXPACKETSIZE0*2
         call    usb_set_epaddr
         movlw   0x02            ; EP2 - Output
-        lfsr    FSR0, USBDATA+24
+        lfsr    FSR0, USBDATA+MAXPACKETSIZE0*3
         call    usb_set_epaddr
 
         ;; initialize the USB RAM
-        lfsr    FSR0, USBDATA+16
+        lfsr    FSR0, USBDATA+MAXPACKETSIZE0*2
         movlw   1               ; the first byte of the EP1 buffer
         movwf   POSTINC0, A     ; is the report number
         movlw   15
