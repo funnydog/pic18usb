@@ -18,6 +18,15 @@ jmpt    macro   addr, reg, accs
         movwf   PCL, A
         endm
 
+        ;; load the offset from DescriptorBegin into offset[0..1]
+loff    macro   addr
+        banksel offset
+        movlw   LOW(addr - DescriptorBegin)
+        movwf   offset+0, B
+        movlw   HIGH(addr - DescriptorBegin)
+        movwf   offset+1, B
+        endm
+
 .usbd1  udata
 
 cnt     res     1               ; counter variable
@@ -31,7 +40,7 @@ devstat res     1               ; device status (self powered, remote wakeup)
 penaddr res     1               ; pending addr to assign to the device
 uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIGURED, SUSPENDED)
 
-offset  res     1               ; descriptor offset
+offset  res     2               ; descriptor offset
 bleft   res     1               ; descriptor length
 
 .usbst  code
@@ -506,7 +515,7 @@ get_descriptor:
         bra     ep0_stall_error
 
 get_descriptor_device:
-        movlw   LOW(Device-DescriptorBegin)
+        loff    Device
         bra     send_with_length
 
 get_descriptor_configuration:
@@ -514,21 +523,17 @@ get_descriptor_configuration:
         bz      get_description_configuration_0
         bra     ep0_stall_error
 get_description_configuration_0:
-        movlw   (Configuration1-DescriptorBegin)
-        call    save_lookup_descriptor
+        loff    Configuration1
         movlw   (Configuration1End-Configuration1)
-        movwf   bleft, B
         bra     send_data
 
 get_descriptor_hid:
-        movlw   LOW(HIDInterface-DescriptorBegin)
+        loff    HIDInterface
         call    send_with_length
 
 get_descriptor_hidreport:
-        movlw   LOW(HIDReport-DescriptorBegin)
-        call    save_lookup_descriptor
-        movlw   HIDReportEnd-HIDReport
-        movwf   bleft, B
+        loff    HIDReport
+        movlw   (HIDReportEnd-HIDReport)
         bra     send_data
 
 get_descriptor_string:
@@ -540,13 +545,13 @@ get_descriptor_string:
         bz      get_descriptor_string2
         bra     ep0_stall_error
 get_descriptor_string0:
-        movlw   (String0-DescriptorBegin)
+        loff    String0
         bra     send_with_length
 get_descriptor_string1:
-        movlw   (String1-DescriptorBegin)
+        loff    String1
         bra     send_with_length
 get_descriptor_string2:
-        movlw   (String2-DescriptorBegin)
+        loff    String2
         bra     send_with_length
 
 get_configuration:
@@ -843,15 +848,27 @@ check_request_toggle:
         btg     STATUS, C, A    ; C = (C==1)?0:1
         return
 
-        ;; send the data when
-        ;; the first byte of the data is the length
+        ;; send_with_length() - send the data with encoded length
+        ;;
+        ;; Send the data where the first byte encodes the length
+        ;;
+        ;; Return: nothing
 send_with_length:
-        call    save_lookup_descriptor
-        movwf   bleft, B        ; length of the bytes to send
+        call    lookup_descriptor
+        movwf   bleft, B
+        bra     send_data_common
 
-        ;; send the data in TABLAT
-        ;; until bleft is zero
+        ;; send_data() - send the data of length W
+        ;; @W: length of the data
+        ;;
+        ;; Send the data of length W
+        ;;
+        ;; Return: nothing
 send_data:
+        movwf   bleft, B        ; save the length
+        call    lookup_descriptor
+
+send_data_common:
         movf    bufdata+7, W, B
         bnz     send_descriptor_packet
         movf    bleft, W, B
@@ -881,17 +898,19 @@ send_descriptor_packet_2:
         movwf   FSR0L, A        ; FSR0 = pointer to USB RAM
 
         ;; restore the lookup table
-        banksel offset
-        movf    offset, W, B
         call    lookup_descriptor
         banksel cnt
-send_loop:
+table_copy_loop:
         tblrd   *+
         movf    TABLAT, W, A
         movwf   POSTINC0, A
-        incf    offset, F, B
-        decfsz  cnt, F, B
-        bra     send_loop
+
+        incf    offset+0, F, B
+        btfsc   STATUS, C, A
+        incf    offset+1, F, B
+
+        decf    cnt, F, B
+        bnz     table_copy_loop
 
         ;; send the data
         banksel BD0IST
@@ -902,14 +921,13 @@ send_loop:
         movwf   BD0IST, B       ; UOWN, DATA[01] bit
         return
 
-        ;; save the offset and
-save_lookup_descriptor:
-        banksel offset
-        movwf   offset, B
         ;; lookup the descriptor from the offset in W
 lookup_descriptor:
+        banksel offset
         clrf    TBLPTRU, A
-        clrf    TBLPTRH, A
+        movf    offset+1, W, B
+        movwf   TBLPTRH, A
+        movf    offset+0, W, B
         addlw   LOW(DescriptorBegin)
         movwf   TBLPTRL, A
         movlw   HIGH(DescriptorBegin)
