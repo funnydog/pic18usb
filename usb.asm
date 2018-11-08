@@ -31,7 +31,7 @@ devstat res     1               ; device status (self powered, remote wakeup)
 penaddr res     1               ; pending addr to assign to the device
 uswstat res     1               ; state of the device (DEFAULT, ADDRESS, CONFIGURED, SUSPENDED)
 
-dptr    res     1               ; descriptor offset
+offset  res     1               ; descriptor offset
 bleft   res     1               ; descriptor length
 
 .usbst  code
@@ -881,15 +881,15 @@ send_descriptor_packet_2:
         movwf   FSR0L, A        ; FSR0 = pointer to USB RAM
 
         ;; restore the lookup table
-        banksel dptr
-        movf    dptr, W, B
+        banksel offset
+        movf    offset, W, B
         call    lookup_descriptor
         banksel cnt
 send_loop:
         tblrd   *+
         movf    TABLAT, W, A
         movwf   POSTINC0, A
-        incf    dptr, F, B
+        incf    offset, F, B
         decfsz  cnt, F, B
         bra     send_loop
 
@@ -904,8 +904,8 @@ send_loop:
 
         ;; save the offset and
 save_lookup_descriptor:
-        banksel dptr
-        movwf   dptr, B
+        banksel offset
+        movwf   offset, B
         ;; lookup the descriptor from the offset in W
 lookup_descriptor:
         clrf    TBLPTRU, A
