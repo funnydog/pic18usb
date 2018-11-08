@@ -473,7 +473,7 @@ standard_requests:
         addlw   (12 - 0) + 1
         btfss   STATUS, C, A
         bra     ep0_stall_error ; check if devreq is in range 0..12
-        jmpt     standard_requests_table, devreq, B
+        jmpt    standard_requests_table, devreq, B
 
 set_address:
         call    check_request_acl ; ACL check
