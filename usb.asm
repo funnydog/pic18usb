@@ -8,14 +8,21 @@ MAXPACKETSIZE0  equ     8       ; max packet size for EP0
 IREPORT_SIZE    equ     8
 OREPORT_SIZE    equ     8
 
-jmpt    macro   addr, reg, accs
-        movlw   UPPER(addr)
+        ;; jump table to [reg] position in the table at the end
+jmpto    macro   reg, accs
+        local   jump_table_address
+        movlw   UPPER(jump_table_address)
         movwf   PCLATU, A
-        movlw   HIGH(addr)
+        movlw   HIGH(jump_table_address)
         movwf   PCLATH, A
         rlncf   reg, W, accs
-        addlw   LOW(addr)
+        addlw   LOW(jump_table_address)
+        btfsc   STATUS, C, A
+        incf    PCLATH, F, A
+        btfsc   STATUS, C, A
+        incf    PCLATU, F, A
         movwf   PCL, A
+jump_table_address:
         endm
 
         ;; load the offset from DescriptorBegin into offset[0..1]
@@ -224,6 +231,7 @@ usb_service_reset_end:
         call    memcpy
         bcf     UIR, TRNIF, A   ; advance USTAT FIFO, BD now CPU owned
 
+        ;; open coded jmpto
         movlw   UPPER(packet_handlers)
         movwf   PCLATU, A
         movlw   HIGH(packet_handlers)
@@ -232,7 +240,28 @@ usb_service_reset_end:
         rrncf   bdcopy+0, W, B  ; get the PIDs
         andlw   0x1E            ; filter out the needed bits
         addlw   LOW(packet_handlers)
+        btfsc   STATUS, C, A
+        incf    PCLATH, F, A
+        btfsc   STATUS, C, A
+        incf    PCLATU, F, A
         movwf   PCL, A
+packet_handlers:
+        return                  ; 0000 - special-reserved
+        bra     usb_out_token   ; 0001 - token-out
+        return                  ; 0010 - handshake-ack
+        return                  ; 0011 - data-data0
+        return                  ; 0100 - special-ping
+        return                  ; 0101 - token-sof
+        return                  ; 0110 - handshake-nyet
+        return                  ; 0111 - data-data2
+        return                  ; 1000 - special-split
+        bra     usb_in_token    ; 1001 - token-in
+        return                  ; 1010 - handshake-nack
+        return                  ; 1011 - data-data1
+        return                  ; 1100 - special-err/pre
+        bra     usb_setup_token ; 1101 - token-setup
+        return                  ; 1110 - handshake-stall
+        return                  ; 1111 - data-mdata
 
         ;; disable the endpoints from 0 to 15
 ep_disable_0_15:
@@ -482,7 +511,20 @@ standard_requests:
         addlw   (12 - 0) + 1
         btfss   STATUS, C, A
         bra     ep0_stall_error ; check if devreq is in range 0..12
-        jmpt    standard_requests_table, devreq, B
+        jmpto   devreq, B
+        bra     get_status            ; GET_STATUS        (0)
+        bra     clear_feature         ; CLEAR_FEATURE     (1)
+        bra     ep0_stall_error       ; RESERVED          (2)
+        bra     set_feature           ; SET_FEATURE       (3)
+        bra     ep0_stall_error       ; RESERVED          (4)
+        bra     set_address           ; SET_ADDRESS       (5)
+        bra     get_descriptor        ; GET_DESCRIPTOR    (6)
+        bra     ep0_stall_error       ; SET_DESCRIPTOR    (7)
+        bra     get_configuration     ; GET_CONFIGURATION (8)
+        bra     set_configuration     ; SET_CONFIGURATION (9)
+        bra     get_interface         ; GET_INTERFACE    (10)
+        bra     set_interface         ; SET_INTERFACE    (11)
+        bra     ep0_stall_error       ; SYNCH_FRAME      (12)
 
 set_address:
         call    check_request_acl ; ACL check
@@ -818,7 +860,20 @@ check_request_acl:
         addlw   255 - 12
         addlw   (12 - 0) + 1
         bnc     check_request_err
-        jmpt    check_request_table, bufdata+1, B
+        jmpto   bufdata+1, B
+        bra     check_allow_onlyep0    ; GET_STATUS        (0)
+        bra     check_allow_onlyep0    ; CLEAR_FEATURE     (1)
+        bra     check_request_err      ; RESERVED          (2)
+        bra     check_allow_onlyep0    ; SET_FEATURE       (3)
+        bra     check_request_err      ; RESERVED          (4)
+        bra     check_allow_default    ; SET_ADDRESS       (5)
+        bra     check_allow_default    ; GET_DESCRIPTOR    (6)
+        bra     check_allow_addressed  ; SET_DESCRIPTOR    (7)
+        bra     check_allow_addressed  ; GET_CONFIGURATION (8)
+        bra     check_allow_addressed  ; SET_CONFIGURATION (9)
+        bra     check_allow_configured ; GET_INTERFACE    (10)
+        bra     check_allow_configured ; SET_INTERFACE    (11)
+        bra     check_allow_configured ; SYNCH_FRAME      (12)
 
 check_request_err:
         bsf     STATUS, C, A
@@ -937,55 +992,6 @@ lookup_descriptor:
         tblrd   *
         movf    TABLAT, W, A
         return
-
-.usbjumptables  code    0x300
-standard_requests_table:
-        bra     get_status            ; GET_STATUS        (0)
-        bra     clear_feature         ; CLEAR_FEATURE     (1)
-        bra     ep0_stall_error       ; RESERVED          (2)
-        bra     set_feature           ; SET_FEATURE       (3)
-        bra     ep0_stall_error       ; RESERVED          (4)
-        bra     set_address           ; SET_ADDRESS       (5)
-        bra     get_descriptor        ; GET_DESCRIPTOR    (6)
-        bra     ep0_stall_error       ; SET_DESCRIPTOR    (7)
-        bra     get_configuration     ; GET_CONFIGURATION (8)
-        bra     set_configuration     ; SET_CONFIGURATION (9)
-        bra     get_interface         ; GET_INTERFACE    (10)
-        bra     set_interface         ; SET_INTERFACE    (11)
-        bra     ep0_stall_error       ; SYNCH_FRAME      (12)
-
-check_request_table:
-        bra     check_allow_onlyep0    ; GET_STATUS        (0)
-        bra     check_allow_onlyep0    ; CLEAR_FEATURE     (1)
-        bra     check_request_err      ; RESERVED          (2)
-        bra     check_allow_onlyep0    ; SET_FEATURE       (3)
-        bra     check_request_err      ; RESERVED          (4)
-        bra     check_allow_default    ; SET_ADDRESS       (5)
-        bra     check_allow_default    ; GET_DESCRIPTOR    (6)
-        bra     check_allow_addressed  ; SET_DESCRIPTOR    (7)
-        bra     check_allow_addressed  ; GET_CONFIGURATION (8)
-        bra     check_allow_addressed  ; SET_CONFIGURATION (9)
-        bra     check_allow_configured ; GET_INTERFACE    (10)
-        bra     check_allow_configured ; SET_INTERFACE    (11)
-        bra     check_allow_configured ; SYNCH_FRAME      (12)
-
-packet_handlers:
-        return                  ; 0000 - special-reserved
-        bra     usb_out_token   ; 0001 - token-out
-        return                  ; 0010 - handshake-ack
-        return                  ; 0011 - data-data0
-        return                  ; 0100 - special-ping
-        return                  ; 0101 - token-sof
-        return                  ; 0110 - handshake-nyet
-        return                  ; 0111 - data-data2
-        return                  ; 1000 - special-split
-        bra     usb_in_token    ; 1001 - token-in
-        return                  ; 1010 - handshake-nack
-        return                  ; 1011 - data-data1
-        return                  ; 1100 - special-err/pre
-        bra     usb_setup_token ; 1101 - token-setup
-        return                  ; 1110 - handshake-stall
-        return                  ; 1111 - data-mdata
 
 .usbtables      CODE_PACK
 
